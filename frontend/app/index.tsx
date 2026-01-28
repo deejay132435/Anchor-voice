@@ -1,30 +1,141 @@
-import { Text, View, StyleSheet, Image } from "react-native";
+import React from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  StatusBar,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
-const EXPO_PUBLIC_BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
-
-export default function Index() {
-  console.log(EXPO_PUBLIC_BACKEND_URL, "EXPO_PUBLIC_BACKEND_URL");
+export default function HomeScreen() {
+  const router = useRouter();
 
   return (
-    <View style={styles.container}>
-      <Image
-        source={require("../assets/images/app-image.png")}
-        style={styles.image}
-      />
-    </View>
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" />
+      
+      <View style={styles.content}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Ionicons name="anchor" size={48} color="#4a90e2" />
+          <Text style={styles.title}>Anchor</Text>
+          <Text style={styles.subtitle}>
+            Stay in control during difficult conversations
+          </Text>
+        </View>
+
+        {/* Main Action Buttons */}
+        <View style={styles.actionsContainer}>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.primaryButton]}
+            onPress={() => router.push('/outgoing')}
+            activeOpacity={0.8}
+          >
+            <View style={styles.buttonContent}>
+              <Ionicons name="mic" size={32} color="#fff" />
+              <Text style={styles.buttonTitle}>Send Message</Text>
+              <Text style={styles.buttonDescription}>
+                Record and review before sending
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionButton, styles.secondaryButton]}
+            onPress={() => router.push('/incoming')}
+            activeOpacity={0.8}
+          >
+            <View style={styles.buttonContent}>
+              <Ionicons name="download" size={32} color="#fff" />
+              <Text style={styles.buttonTitle}>Received Message</Text>
+              <Text style={styles.buttonDescription}>
+                Process incoming voice message
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Footer Info */}
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
+            Anchor helps you maintain self-control and de-escalation.
+            You're always in control.
+          </Text>
+        </View>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0c0c0c",
-    alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: '#0f0f1e',
   },
-  image: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "contain",
+  content: {
+    flex: 1,
+    padding: 24,
+  },
+  header: {
+    alignItems: 'center',
+    marginTop: 32,
+    marginBottom: 48,
+  },
+  title: {
+    fontSize: 36,
+    fontWeight: '700',
+    color: '#fff',
+    marginTop: 16,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#a0a0b0',
+    textAlign: 'center',
+    marginTop: 8,
+    paddingHorizontal: 32,
+  },
+  actionsContainer: {
+    flex: 1,
+    gap: 16,
+  },
+  actionButton: {
+    borderRadius: 16,
+    padding: 24,
+    minHeight: 160,
+    justifyContent: 'center',
+  },
+  primaryButton: {
+    backgroundColor: '#4a90e2',
+  },
+  secondaryButton: {
+    backgroundColor: '#2d4059',
+  },
+  buttonContent: {
+    alignItems: 'center',
+  },
+  buttonTitle: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#fff',
+    marginTop: 12,
+  },
+  buttonDescription: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  footer: {
+    paddingVertical: 24,
+    alignItems: 'center',
+  },
+  footerText: {
+    fontSize: 12,
+    color: '#606070',
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });
