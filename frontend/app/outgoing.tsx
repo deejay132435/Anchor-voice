@@ -355,7 +355,7 @@ export default function OutgoingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f0f1e',
+    backgroundColor: '#0a0a0a',
   },
   scrollContent: {
     padding: 24,
@@ -392,7 +392,7 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: '#4a90e2',
+    backgroundColor: '#9b59b6',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -417,14 +417,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#1a0a1f',
     padding: 16,
     borderRadius: 12,
     gap: 12,
   },
   playButtonText: {
     fontSize: 16,
-    color: '#4a90e2',
+    color: '#9b59b6',
     fontWeight: '600',
   },
   analysisSection: {
@@ -437,7 +437,7 @@ const styles = StyleSheet.create({
     color: '#a0a0b0',
   },
   insightsSection: {
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#1a0a1f',
     borderRadius: 12,
     padding: 20,
     marginBottom: 16,
@@ -463,7 +463,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2d4059',
+    backgroundColor: '#6c3483',
     padding: 16,
     borderRadius: 12,
     marginBottom: 16,
@@ -475,7 +475,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   suggestionsSection: {
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#1a0a1f',
     borderRadius: 12,
     padding: 20,
     marginBottom: 16,
@@ -495,7 +495,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#4a90e2',
+    backgroundColor: '#9b59b6',
     color: '#fff',
     textAlign: 'center',
     lineHeight: 24,
@@ -523,7 +523,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   rerecordButton: {
-    backgroundColor: '#2d4059',
+    backgroundColor: '#6c3483',
   },
   sendButton: {
     backgroundColor: '#27ae60',
