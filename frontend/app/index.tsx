@@ -20,7 +20,7 @@ export default function HomeScreen() {
       <View style={styles.content}>
         {/* Header */}
         <View style={styles.header}>
-          <Ionicons name="anchor" size={48} color="#4a90e2" />
+          <Ionicons name="boat" size={48} color="#4a90e2" />
           <Text style={styles.title}>Anchor</Text>
           <Text style={styles.subtitle}>
             Stay in control during difficult conversations
