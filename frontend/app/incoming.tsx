@@ -298,7 +298,7 @@ export default function IncomingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f0f1e',
+    backgroundColor: '#0a0a0a',
   },
   scrollContent: {
     padding: 24,
@@ -328,7 +328,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#4a90e2',
+    backgroundColor: '#9b59b6',
     padding: 18,
     borderRadius: 12,
     marginBottom: 24,
@@ -342,13 +342,13 @@ const styles = StyleSheet.create({
   preparationCue: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#1a0a1f',
     padding: 20,
     borderRadius: 12,
     marginBottom: 24,
     gap: 16,
     borderLeftWidth: 4,
-    borderLeftColor: '#4a90e2',
+    borderLeftColor: '#9b59b6',
   },
   preparationText: {
     flex: 1,
@@ -378,7 +378,7 @@ const styles = StyleSheet.create({
     color: '#a0a0b0',
   },
   approachSection: {
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#1a0a1f',
     borderRadius: 12,
     padding: 20,
     marginBottom: 24,
@@ -413,7 +413,7 @@ const styles = StyleSheet.create({
     color: '#a0a0b0',
   },
   suggestionsSection: {
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#1a0a1f',
     borderRadius: 12,
     padding: 20,
     marginBottom: 24,
@@ -438,7 +438,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#4a90e2',
+    backgroundColor: '#9b59b6',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -465,7 +465,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   newMessageButton: {
-    backgroundColor: '#2d4059',
+    backgroundColor: '#6c3483',
   },
   doneButton: {
     backgroundColor: '#27ae60',
