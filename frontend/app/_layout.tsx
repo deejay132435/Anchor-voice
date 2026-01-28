@@ -1,10 +1,10 @@
 import { Stack } from 'expo-router';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { View, StyleSheet } from 'react-native';
 
 export default function RootLayout() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <View style={styles.container}>
       <SafeAreaProvider>
         <Stack
           screenOptions={{
@@ -38,15 +38,14 @@ export default function RootLayout() {
               presentation: 'card',
             }}
           />
-          <Stack.Screen
-            name="suggestions"
-            options={{
-              title: 'Suggestions',
-              presentation: 'modal',
-            }}
-          />
         </Stack>
       </SafeAreaProvider>
-    </GestureHandlerRootView>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+});
