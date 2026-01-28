@@ -20,7 +20,7 @@ export default function HomeScreen() {
       <View style={styles.content}>
         {/* Header */}
         <View style={styles.header}>
-          <Ionicons name="boat" size={48} color="#4a90e2" />
+          <Ionicons name="thunderstorm" size={48} color="#9b59b6" />
           <Text style={styles.title}>Anchor</Text>
           <Text style={styles.subtitle}>
             Stay in control during difficult conversations
@@ -73,7 +73,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f0f1e',
+    backgroundColor: '#0a0a0a',
   },
   content: {
     flex: 1,
@@ -108,10 +108,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   primaryButton: {
-    backgroundColor: '#4a90e2',
+    backgroundColor: '#9b59b6',
   },
   secondaryButton: {
-    backgroundColor: '#2d4059',
+    backgroundColor: '#6c3483',
   },
   buttonContent: {
     alignItems: 'center',
