@@ -1,57 +1,46 @@
-// Anchor Service Worker - No tracking, privacy-first
-const CACHE_NAME = 'anchor-v1';
+// Anchor Service Worker v2 - Clean cache, no tracking
+const CACHE_NAME = 'anchor-v2';
 const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/outgoing',
-  '/incoming'
+  '/'
 ];
 
-// Install event - cache essential assets
+// Install event - minimal caching
 self.addEventListener('install', (event) => {
+  console.log('[SW] Installing v2');
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('[SW] Caching app shell');
-        return cache.addAll(ASSETS_TO_CACHE);
-      })
+      .then((cache) => cache.addAll(ASSETS_TO_CACHE))
       .then(() => self.skipWaiting())
   );
 });
 
-// Activate event - clean up old caches
+// Activate event - clean ALL old caches
 self.addEventListener('activate', (event) => {
+  console.log('[SW] Activating v2');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
+        cacheNames.map((name) => {
+          console.log('[SW] Deleting cache:', name);
+          return caches.delete(name);
+        })
       );
     }).then(() => self.clients.claim())
   );
 });
 
-// Fetch event - network first, fallback to cache
+// Fetch event - network only, no cache
 self.addEventListener('fetch', (event) => {
   event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        // Clone the response before caching
-        const responseToCache = response.clone();
-        
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, responseToCache);
-        });
-        
-        return response;
-      })
-      .catch(() => {
-        // If network fails, try cache
-        return caches.match(event.request);
-      })
+    fetch(event.request).catch(() => {
+      // Only use cache for navigation requests as fallback
+      if (event.request.mode === 'navigate') {
+        return caches.match('/');
+      }
+      return new Response('Offline', { status: 503 });
+    })
   );
 });
 
-// No tracking, no analytics, no background sync
-console.log('[SW] Anchor service worker loaded - Privacy-first, no tracking');
+console.log('[SW] Anchor service worker v2 loaded - No caching, privacy-first');
+

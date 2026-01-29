@@ -62,9 +62,6 @@ export default function HomeScreen() {
         <View style={styles.footer}>
         </View>
       </View>
-
-      {/* PWA Install Prompt */}
-      <InstallPrompt />
     </SafeAreaView>
   );
 }
