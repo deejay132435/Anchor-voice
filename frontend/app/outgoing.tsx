@@ -228,6 +228,11 @@ export default function OutgoingScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Recording Section */}
         <View style={styles.recordingSection}>
+          {/* Grounding Line */}
+          {!isRecording && !recordedUri && (
+            <Text style={styles.groundingText}>Take your time.</Text>
+          )}
+
           {isRecording && (
             <View style={styles.recordingIndicator}>
               <View style={styles.pulseCircle} />
@@ -250,14 +255,6 @@ export default function OutgoingScreen() {
               color="#fff"
             />
           </TouchableOpacity>
-
-          <Text style={styles.recordHint}>
-            {isRecording
-              ? 'Tap to stop recording'
-              : recordedUri
-              ? 'Tap to record again'
-              : 'Tap to start recording'}
-          </Text>
         </View>
 
         {/* Playback Section */}
@@ -290,10 +287,20 @@ export default function OutgoingScreen() {
 
         {analysisResults && !isAnalyzing && (
           <View style={styles.insightsSection}>
-            <Text style={styles.insightsTitle}>Message Insights</Text>
+            <View style={styles.insightsHeader}>
+              <Text style={styles.insightsTitle}>Insights</Text>
+              <TouchableOpacity
+                onPress={() => Alert.alert(
+                  'About Insights',
+                  'These insights analyze your message tone, pacing, and emotional indicators to help you communicate more effectively.'
+                )}
+              >
+                <Ionicons name="information-circle-outline" size={22} color="#9b59b6" />
+              </TouchableOpacity>
+            </View>
             {analysisResults.insights.map((insight, index) => (
               <View key={index} style={styles.insightItem}>
-                <Ionicons name="information-circle" size={20} color="#f39c12" />
+                <Ionicons name="radio-button-on" size={16} color="#9b59b6" />
                 <Text style={styles.insightText}>{insight}</Text>
               </View>
             ))}
@@ -320,7 +327,17 @@ export default function OutgoingScreen() {
 
         {showSuggestions && suggestions.length > 0 && (
           <View style={styles.suggestionsSection}>
-            <Text style={styles.suggestionsTitle}>Alternative Approaches</Text>
+            <View style={styles.insightsHeader}>
+              <Text style={styles.suggestionsTitle}>Suggestions</Text>
+              <TouchableOpacity
+                onPress={() => Alert.alert(
+                  'About Suggestions',
+                  'AI-generated alternative ways to express yourself that may help keep the conversation constructive.'
+                )}
+              >
+                <Ionicons name="information-circle-outline" size={22} color="#9b59b6" />
+              </TouchableOpacity>
+            </View>
             {suggestions.map((suggestion, index) => (
               <View key={index} style={styles.suggestionItem}>
                 <Text style={styles.suggestionNumber}>{index + 1}</Text>
@@ -373,6 +390,13 @@ const styles = StyleSheet.create({
     marginTop: 32,
     marginBottom: 32,
   },
+  groundingText: {
+    fontSize: 18,
+    color: '#9b59b6',
+    fontWeight: '500',
+    marginBottom: 32,
+    textAlign: 'center',
+  },
   recordingIndicator: {
     alignItems: 'center',
     marginBottom: 24,
@@ -411,14 +435,9 @@ const styles = StyleSheet.create({
   recordButtonActive: {
     backgroundColor: '#e74c3c',
   },
-  recordHint: {
-    marginTop: 16,
-    fontSize: 14,
-    color: '#a0a0b0',
-    textAlign: 'center',
-  },
   playbackSection: {
     marginBottom: 24,
+    alignItems: 'center',
   },
   playButton: {
     flexDirection: 'row',
@@ -449,11 +468,16 @@ const styles = StyleSheet.create({
     padding: 20,
     marginBottom: 16,
   },
+  insightsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   insightsTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#fff',
-    marginBottom: 16,
   },
   insightItem: {
     flexDirection: 'row',

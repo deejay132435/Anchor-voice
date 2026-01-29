@@ -252,10 +252,17 @@ export default function IncomingScreen() {
 
         {suggestions.length > 0 && !isLoadingSuggestions && (
           <View style={styles.suggestionsSection}>
-            <Text style={styles.suggestionsTitle}>Response Examples</Text>
-            <Text style={styles.suggestionsSubtitle}>
-              Here are some calm ways you could respond:
-            </Text>
+            <View style={styles.suggestionsHeader}>
+              <Text style={styles.suggestionsTitle}>Response Examples</Text>
+              <TouchableOpacity
+                onPress={() => Alert.alert(
+                  'About Responses',
+                  'AI-generated examples to help you respond calmly and constructively.'
+                )}
+              >
+                <Ionicons name="information-circle-outline" size={22} color="#9b59b6" />
+              </TouchableOpacity>
+            </View>
             {suggestions.map((suggestion, index) => (
               <View key={index} style={styles.suggestionItem}>
                 <View style={styles.suggestionNumber}>
@@ -306,23 +313,14 @@ const styles = StyleSheet.create({
   },
   instructionsSection: {
     alignItems: 'center',
-    marginTop: 32,
+    marginTop: 48,
     marginBottom: 32,
   },
-  instructionsTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#fff',
-    marginTop: 16,
+  groundingText: {
+    fontSize: 18,
+    color: '#9b59b6',
+    fontWeight: '500',
     textAlign: 'center',
-  },
-  instructionsText: {
-    fontSize: 15,
-    color: '#a0a0b0',
-    textAlign: 'center',
-    marginTop: 12,
-    lineHeight: 22,
-    paddingHorizontal: 16,
   },
   selectButton: {
     flexDirection: 'row',
@@ -418,16 +416,16 @@ const styles = StyleSheet.create({
     padding: 20,
     marginBottom: 24,
   },
+  suggestionsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   suggestionsTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#fff',
-    marginBottom: 8,
-  },
-  suggestionsSubtitle: {
-    fontSize: 14,
-    color: '#a0a0b0',
-    marginBottom: 16,
   },
   suggestionItem: {
     flexDirection: 'row',
