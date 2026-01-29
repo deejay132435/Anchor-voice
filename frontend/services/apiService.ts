@@ -6,7 +6,13 @@ export interface AudioAnalysisResponse {
   raised_voice: boolean;
   fast_pacing: boolean;
   emotional_charge: boolean;
+  contains_profanity: boolean;
+  contains_labelling: boolean;
+  escalation_detected: boolean;
+  transcription: string;
+  detected_language: string;
   insights: string[];
+  severity_level: string;
 }
 
 export interface SuggestionResponse {
