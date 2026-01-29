@@ -60,7 +60,7 @@ export default function IncomingScreen() {
     try {
       // Read audio file and convert to base64
       const base64Audio = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: 'base64',
       });
 
       // Get file info
