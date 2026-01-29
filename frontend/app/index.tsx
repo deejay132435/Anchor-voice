@@ -38,7 +38,7 @@ export default function HomeScreen() {
           >
             <View style={styles.buttonContent}>
               <Ionicons name="mic" size={32} color="#fff" />
-              <Text style={styles.buttonTitle}>Send Message</Text>
+              <Text style={styles.buttonTitle}>Prepare a Voice Message</Text>
               <Text style={styles.buttonDescription}>
                 Record and review before sending
               </Text>
@@ -52,7 +52,7 @@ export default function HomeScreen() {
           >
             <View style={styles.buttonContent}>
               <Ionicons name="download" size={32} color="#fff" />
-              <Text style={styles.buttonTitle}>Received Message</Text>
+              <Text style={styles.buttonTitle}>Listen to a Voice Message</Text>
               <Text style={styles.buttonDescription}>
                 Process incoming voice message
               </Text>
