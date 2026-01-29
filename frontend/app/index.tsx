@@ -20,10 +20,12 @@ export default function HomeScreen() {
       <View style={styles.content}>
         {/* Header */}
         <View style={styles.header}>
-          <Ionicons name="thunderstorm" size={48} color="#9b59b6" />
+          <View style={styles.iconContainer}>
+            <View style={styles.verticalLine} />
+          </View>
           <Text style={styles.title}>Anchor</Text>
           <Text style={styles.subtitle}>
-            Stay in control during difficult conversations
+            Stay steady.{'\n'}You're in control.
           </Text>
         </View>
 
@@ -84,6 +86,18 @@ const styles = StyleSheet.create({
     marginTop: 32,
     marginBottom: 48,
   },
+  iconContainer: {
+    width: 60,
+    height: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  verticalLine: {
+    width: 4,
+    height: 48,
+    backgroundColor: '#9b59b6',
+    borderRadius: 2,
+  },
   title: {
     fontSize: 36,
     fontWeight: '700',
@@ -94,8 +108,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#a0a0b0',
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: 12,
     paddingHorizontal: 32,
+    lineHeight: 24,
   },
   actionsContainer: {
     flex: 1,
