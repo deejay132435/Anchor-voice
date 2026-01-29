@@ -59,10 +59,6 @@ export default function HomeScreen() {
 
         {/* Footer Info */}
         <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            Anchor helps you maintain self-control and de-escalation.
-            You're always in control.
-          </Text>
         </View>
       </View>
     </SafeAreaView>
