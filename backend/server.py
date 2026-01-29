@@ -10,6 +10,9 @@ from typing import List, Optional
 import base64
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 import io
+import openai
+import re
+import tempfile
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -27,6 +30,9 @@ api_router = APIRouter(prefix="/api")
 
 # Get EMERGENT_LLM_KEY
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
+
+# Initialize OpenAI client for Whisper
+openai_client = openai.OpenAI(api_key=EMERGENT_LLM_KEY)
 
 # Configure logging
 logging.basicConfig(
@@ -46,7 +52,13 @@ class AudioAnalysisResponse(BaseModel):
     raised_voice: bool
     fast_pacing: bool
     emotional_charge: bool
+    contains_profanity: bool
+    contains_labelling: bool
+    escalation_detected: bool
+    transcription: str
+    detected_language: str
     insights: List[str]
+    severity_level: str  # "low", "medium", "high"
 
 
 class SuggestionRequest(BaseModel):
@@ -63,47 +75,168 @@ async def root():
     return {"message": "Anchor API - Voice De-escalation Tool"}
 
 
+def detect_profanity(text: str) -> bool:
+    """Detect profanity and aggressive language."""
+    profanity_patterns = [
+        r'\bf[*u]ck',
+        r'\bsh[*i]t',
+        r'\bd[*a]mn',
+        r'\bass',
+        r'\bbitch',
+        r'\bbastard',
+        r'\bcrap',
+        r'\bhell\b',
+        r'\bidiot',
+        r'\bstupid\b',
+        # Add more patterns as needed
+    ]
+    
+    text_lower = text.lower()
+    for pattern in profanity_patterns:
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            return True
+    return False
+
+
+def detect_labelling(text: str) -> bool:
+    """Detect labelling language like 'you always', 'you never'."""
+    labelling_patterns = [
+        r'\byou\s+always\b',
+        r'\byou\s+never\b',
+        r'\byou\'re\s+so\b',
+        r'\byou\'re\s+such\b',
+        r'\bwhy\s+do\s+you\s+always\b',
+        r'\bwhy\s+do\s+you\s+never\b',
+        r'\beveryone\s+knows\b',
+        r'\banyone\s+can\s+see\b',
+    ]
+    
+    text_lower = text.lower()
+    for pattern in labelling_patterns:
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            return True
+    return False
+
+
+def detect_escalation(text: str) -> bool:
+    """Detect escalation markers and aggressive phrasing."""
+    escalation_patterns = [
+        r'\bshut\s+up\b',
+        r'\bleave\s+me\s+alone\b',
+        r'\bget\s+out\b',
+        r'\bgo\s+away\b',
+        r'\bi\s+hate\b',
+        r'\bcan\'t\s+stand\b',
+        r'\bsick\s+of\b',
+        r'\benough\b',
+        r'\bdone\s+with\b',
+        r'\bfed\s+up\b',
+        r'\bwhat\s+the\s+hell\b',
+        r'\bwhat\'s\s+wrong\s+with\s+you\b',
+    ]
+    
+    text_lower = text.lower()
+    for pattern in escalation_patterns:
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            return True
+    return False
+
+
 @api_router.post("/analyze-audio", response_model=AudioAnalysisResponse)
 async def analyze_audio(request: AudioAnalysisRequest):
     """
-    Analyze audio for volume, pacing, and emotional indicators.
-    Note: This is a simplified analysis based on audio properties.
-    Real implementation would use audio processing libraries.
+    Analyze audio comprehensively:
+    1. Transcribe speech using Whisper (multi-language)
+    2. Analyze content for profanity, labelling, escalation
+    3. Analyze audio properties (volume, pacing)
+    4. Generate contextual insights
     """
     try:
         # Decode base64 audio
         audio_bytes = base64.b64decode(request.audio_base64)
         
-        # Simple heuristic analysis based on audio size and duration
-        # In production, you'd use librosa or similar for actual audio analysis
-        audio_size_kb = len(audio_bytes) / 1024
+        # Save to temporary file for Whisper
+        with tempfile.NamedTemporaryFile(suffix='.m4a', delete=False) as temp_audio:
+            temp_audio.write(audio_bytes)
+            temp_audio_path = temp_audio.name
         
-        # Heuristics (these are simplified for MVP)
-        # Larger file size relative to duration suggests higher volume/bitrate
+        try:
+            # Transcribe using Whisper (auto-detects language)
+            with open(temp_audio_path, 'rb') as audio_file:
+                transcription_response = openai_client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    response_format="verbose_json"
+                )
+            
+            transcription = transcription_response.text
+            detected_language = transcription_response.language if hasattr(transcription_response, 'language') else 'en'
+            
+        finally:
+            # Clean up temp file
+            os.unlink(temp_audio_path)
+        
+        # Analyze audio properties
+        audio_size_kb = len(audio_bytes) / 1024
         size_per_second = audio_size_kb / request.duration_seconds if request.duration_seconds > 0 else 0
         
-        raised_voice = size_per_second > 30  # Simplified threshold
-        fast_pacing = request.duration_seconds > 0 and (len(audio_bytes) / request.duration_seconds) > 15000  # Simplified
-        emotional_charge = raised_voice or fast_pacing
+        # Basic audio analysis
+        raised_voice = size_per_second > 30
+        fast_pacing = request.duration_seconds > 0 and request.duration_seconds < 10 and len(transcription.split()) > 30
         
-        # Generate insights (max 2-3)
+        # Content analysis
+        contains_profanity = detect_profanity(transcription)
+        contains_labelling = detect_labelling(transcription)
+        escalation_detected = detect_escalation(transcription)
+        
+        # Determine severity and emotional charge
+        severity_score = 0
+        if raised_voice:
+            severity_score += 1
+        if contains_profanity:
+            severity_score += 2
+        if contains_labelling:
+            severity_score += 1
+        if escalation_detected:
+            severity_score += 2
+        
+        if severity_score >= 4:
+            severity_level = "high"
+        elif severity_score >= 2:
+            severity_level = "medium"
+        else:
+            severity_level = "low"
+        
+        emotional_charge = severity_score > 0
+        
+        # Generate insights (max 3)
         insights = []
+        if escalation_detected:
+            insights.append("Escalation language detected")
+        if contains_profanity:
+            insights.append("Strong language present")
+        if contains_labelling:
+            insights.append("Labelling language used")
         if raised_voice:
             insights.append("Raised voice detected")
-        if fast_pacing:
-            insights.append("Fast pacing detected")
-        if emotional_charge and not raised_voice and not fast_pacing:
-            insights.append("Emotional charge likely")
+        if fast_pacing and not escalation_detected:
+            insights.append("Fast pacing - may indicate stress")
         
-        # If no specific insights, provide neutral feedback
+        # If no specific issues, provide positive feedback
         if not insights:
-            insights.append("Message tone appears calm")
+            insights.append("Message tone appears calm and constructive")
         
         return AudioAnalysisResponse(
             raised_voice=raised_voice,
             fast_pacing=fast_pacing,
             emotional_charge=emotional_charge,
-            insights=insights[:3]  # Max 3 insights
+            contains_profanity=contains_profanity,
+            contains_labelling=contains_labelling,
+            escalation_detected=escalation_detected,
+            transcription=transcription,
+            detected_language=detected_language,
+            insights=insights[:3],  # Max 3 insights
+            severity_level=severity_level
         )
     
     except Exception as e:
@@ -114,71 +247,155 @@ async def analyze_audio(request: AudioAnalysisRequest):
 @api_router.post("/generate-suggestions", response_model=SuggestionResponse)
 async def generate_suggestions(request: SuggestionRequest):
     """
-    Generate neutral de-escalation suggestions using Claude.
+    Generate context-aware, nuanced suggestions using Claude.
+    Not always disengagement - depends on severity and content.
     """
     try:
         # Initialize Claude chat
         chat = LlmChat(
             api_key=EMERGENT_LLM_KEY,
             session_id="anchor-suggestions",
-            system_message="You are a conflict de-escalation expert. Generate short, neutral boundary-setting phrases that help users avoid reactive behavior. Focus on disengagement and self-control, not winning arguments. Each suggestion should be 1-2 sentences maximum."
+            system_message="""You are a conflict de-escalation expert who provides nuanced, context-aware communication suggestions.
+
+Key principles:
+- Don't always suggest disengagement - some situations benefit from calm engagement
+- Match response to severity: low severity = calm engagement, high severity = boundaries
+- Fast pacing alone doesn't mean conflict - some people naturally speak quickly
+- Focus on what was SAID, not just how it was said
+- Suggestions should be authentic and varied, not formulaic"""
         )
         chat.with_model("anthropic", "claude-sonnet-4-5-20250929")
         
-        # Build context based on analysis
+        # Build rich context
         analysis = request.analysis_results
-        context = f"Message type: {request.message_type}\n"
+        severity = analysis.get('severity_level', 'medium')
+        transcription = analysis.get('transcription', '')
+        language = analysis.get('detected_language', 'en')
         
+        context_parts = [f"Message type: {request.message_type}"]
+        context_parts.append(f"Severity level: {severity}")
+        context_parts.append(f"Language detected: {language}")
+        
+        if transcription:
+            context_parts.append(f"What was said: \"{transcription}\"")
+        
+        if analysis.get('escalation_detected'):
+            context_parts.append("- Escalation language detected (e.g., 'shut up', 'enough', etc.)")
+        if analysis.get('contains_profanity'):
+            context_parts.append("- Strong language/profanity present")
+        if analysis.get('contains_labelling'):
+            context_parts.append("- Labelling language used (e.g., 'you always', 'you never')")
         if analysis.get('raised_voice'):
-            context += "- Raised voice detected\n"
-        if analysis.get('fast_pacing'):
-            context += "- Fast pacing detected\n"
-        if analysis.get('emotional_charge'):
-            context += "- Emotional charge present\n"
+            context_parts.append("- Raised voice detected")
+        if analysis.get('fast_pacing') and not analysis.get('escalation_detected'):
+            context_parts.append("- Fast pacing (but this alone isn't necessarily conflict)")
         
+        context = "\n".join(context_parts)
+        
+        # Generate appropriate prompt based on severity
         if request.message_type == "outgoing":
-            prompt = f"{context}\nGenerate exactly 3 short, neutral phrases the user could say instead to de-escalate. Focus on setting boundaries and taking space. Each phrase should be one sentence. Format as numbered list."
+            if severity == "high":
+                prompt = f"""{context}
+
+This is high-conflict content. Generate exactly 3 short phrases that:
+1. Set firm boundaries
+2. Prioritize safety and de-escalation
+3. Avoid engaging with the content
+Each phrase should be 1 sentence. Format as numbered list."""
+            elif severity == "medium":
+                prompt = f"""{context}
+
+This shows some conflict markers. Generate exactly 3 short phrases that:
+1. Acknowledge tension without escalating
+2. Offer space or a pause
+3. Keep the door open for calmer conversation
+Each phrase should be 1 sentence. Format as numbered list."""
+            else:  # low
+                prompt = f"""{context}
+
+This seems relatively calm. Generate exactly 3 short phrases that:
+1. Continue the conversation constructively
+2. Express needs clearly and calmly
+3. Show openness to dialogue
+Each phrase should be 1 sentence. Format as numbered list."""
         else:  # incoming
-            prompt = f"{context}\nGenerate exactly 3 short, calm response approaches for someone who just received this message. Focus on disengagement strategies. Each should be one sentence. Format as numbered list."
+            if severity == "high":
+                prompt = f"""{context}
+
+Someone sent you a high-conflict message. Generate exactly 3 short response approaches that:
+1. Protect your emotional wellbeing
+2. Don't match the energy or engage with attacks
+3. Set boundaries calmly
+Each should be 1 sentence. Format as numbered list."""
+            elif severity == "medium":
+                prompt = f"""{context}
+
+Someone sent you a somewhat heated message. Generate exactly 3 short response approaches that:
+1. Acknowledge their feelings without agreeing with attacks
+2. Suggest a pause or calmer discussion
+3. Keep your composure
+Each should be 1 sentence. Format as numbered list."""
+            else:  # low
+                prompt = f"""{context}
+
+Someone sent you a message that seems relatively calm. Generate exactly 3 short response approaches that:
+1. Respond constructively to what they said
+2. Keep communication open
+3. Address their concerns thoughtfully
+Each should be 1 sentence. Format as numbered list."""
         
         # Get suggestions from Claude
         user_message = UserMessage(text=prompt)
         response = await chat.send_message(user_message)
         
-        # Parse response into list (simple parsing)
+        # Parse response into list
         lines = response.strip().split('\n')
         suggestions = []
         for line in lines:
-            # Remove numbering and clean up
             cleaned = line.strip()
-            if cleaned and len(cleaned) > 5:  # Basic validation
+            if cleaned and len(cleaned) > 5:
                 # Remove leading numbers and dots
                 if cleaned[0].isdigit():
                     cleaned = cleaned.split('.', 1)[-1].strip()
-                suggestions.append(cleaned)
+                if cleaned and cleaned not in suggestions:  # Avoid duplicates
+                    suggestions.append(cleaned)
         
-        # Ensure we have at least 3 suggestions, add defaults if needed
-        default_suggestions = [
-            "I need some space right now. We can talk later.",
-            "I'm not continuing this while it's heated.",
-            "I want this to stay calm, so I'm stepping away."
-        ]
+        # Fallback suggestions based on severity
+        if severity == "high":
+            default_suggestions = [
+                "I need to step away from this conversation right now.",
+                "I'm not going to continue while things are this heated.",
+                "Let's talk about this when we're both calmer."
+            ]
+        elif severity == "medium":
+            default_suggestions = [
+                "I hear that you're upset. Can we take a break and talk later?",
+                "I want to understand you, but I need us both to stay calm.",
+                "Let's pause here and come back to this when tensions are lower."
+            ]
+        else:
+            default_suggestions = [
+                "I appreciate you sharing that with me.",
+                "Let's work through this together calmly.",
+                "I understand where you're coming from."
+            ]
         
+        # Ensure we have at least 3 suggestions
         while len(suggestions) < 3:
             suggestions.append(default_suggestions[len(suggestions) % 3])
         
         return SuggestionResponse(
-            suggestions=suggestions[:3]  # Return exactly 3
+            suggestions=suggestions[:3]
         )
     
     except Exception as e:
         logger.error(f"Error generating suggestions: {str(e)}")
-        # Return default suggestions on error
+        # Return context-appropriate defaults
         return SuggestionResponse(
             suggestions=[
                 "I need some space right now. We can talk later.",
-                "I'm not continuing this while it's heated.",
-                "I want this to stay calm, so I'm stepping away."
+                "I want to understand you, but let's both stay calm.",
+                "Let's take a break and come back to this."
             ]
         )
 
