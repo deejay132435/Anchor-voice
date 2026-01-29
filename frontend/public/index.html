@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  
+  <!-- PWA Meta Tags -->
+  <meta name="theme-color" content="#9b59b6" />
+  <meta name="description" content="Anchor - Voice De-escalation. Stay steady. You're in control." />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Anchor" />
+  
+  <!-- Manifest -->
+  <link rel="manifest" href="/manifest.json" />
+  
+  <!-- Icons -->
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+  <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png" />
+  
+  <title>Anchor - Voice De-escalation</title>
+  
+  <!-- Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js')
+          .then(registration => {
+            console.log('[PWA] Service Worker registered:', registration);
+          })
+          .catch(error => {
+            console.log('[PWA] Service Worker registration failed:', error);
+          });
+      });
+    }
+  </script>
+  
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    
+    html, body, #root {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #0a0a0a;
+      -webkit-overflow-scrolling: touch;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #fff;
+    }
+    
+    /* Full screen on iOS */
+    @media (display-mode: standalone) {
+      body {
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+    }
+    
+    /* Loading screen */
+    #loading {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background-color: #0a0a0a;
+      z-index: 9999;
+    }
+    
+    #loading .line {
+      width: 4px;
+      height: 48px;
+      background-color: #9b59b6;
+      border-radius: 2px;
+      margin-bottom: 16px;
+    }
+    
+    #loading .text {
+      color: #fff;
+      font-size: 36px;
+      font-weight: 700;
+      margin-top: 16px;
+    }
+    
+    #loading .subtitle {
+      color: #a0a0b0;
+      font-size: 16px;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div id="loading">
+    <div class="line"></div>
+    <div class="text">Anchor</div>
+    <div class="subtitle">Stay steady. You're in control.</div>
+  </div>
+  <div id="root"></div>
+</body>
+</html>

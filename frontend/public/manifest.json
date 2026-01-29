@@ -1,0 +1,41 @@
+{
+  "name": "Anchor - Voice De-escalation",
+  "short_name": "Anchor",
+  "description": "Stay steady. You're in control.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#9b59b6",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["health", "lifestyle", "utilities"],
+  "shortcuts": [
+    {
+      "name": "Prepare Message",
+      "short_name": "Record",
+      "description": "Prepare a voice message",
+      "url": "/outgoing",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Listen to Message",
+      "short_name": "Listen",
+      "description": "Listen to a voice message",
+      "url": "/incoming",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

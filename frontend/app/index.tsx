@@ -9,6 +9,7 @@ import {
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import InstallPrompt from './install-prompt';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -61,6 +62,9 @@ export default function HomeScreen() {
         <View style={styles.footer}>
         </View>
       </View>
+
+      {/* PWA Install Prompt */}
+      <InstallPrompt />
     </SafeAreaView>
   );
 }
