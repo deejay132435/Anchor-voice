@@ -39,20 +39,33 @@ export const generateSuggestions = async (
   analysisResults: any,
   messageType: 'outgoing' | 'incoming'
 ): Promise<SuggestionResponse> => {
-  const response = await fetch(`${API_URL}/api/generate-suggestions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      analysis_results: analysisResults,
-      message_type: messageType,
-    }),
-  });
+  try {
+    console.log('Generating suggestions with:', { analysisResults, messageType, API_URL });
+    
+    const response = await fetch(`${API_URL}/api/generate-suggestions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        analysis_results: analysisResults,
+        message_type: messageType,
+      }),
+    });
 
-  if (!response.ok) {
-    throw new Error('Failed to generate suggestions');
+    console.log('Suggestions response status:', response.status);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Suggestions API error:', errorText);
+      throw new Error(`Failed to generate suggestions: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log('Suggestions received:', data);
+    return data;
+  } catch (error) {
+    console.error('Error in generateSuggestions:', error);
+    throw error;
   }
-
-  return response.json();
 };
