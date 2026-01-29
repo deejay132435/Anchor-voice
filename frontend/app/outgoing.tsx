@@ -182,7 +182,14 @@ export default function OutgoingScreen() {
       setShowSuggestions(true);
     } catch (error) {
       console.error('Error loading suggestions:', error);
-      Alert.alert('Error', 'Failed to load suggestions.');
+      // Use default suggestions as fallback
+      setSuggestions([
+        "I need some space right now. We can talk later.",
+        "I'm not continuing this while it's heated.",
+        "I want this to stay calm, so I'm stepping away."
+      ]);
+      setShowSuggestions(true);
+      Alert.alert('Note', 'Using default suggestions. Please check your connection.');
     } finally {
       setIsLoadingSuggestions(false);
     }
