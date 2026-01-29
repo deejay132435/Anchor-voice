@@ -22,13 +22,31 @@
   
   <title>Anchor - Voice De-escalation</title>
   
+  <!-- Debug and Error Logging -->
+  <script>
+    // Catch all errors
+    window.onerror = function(message, source, lineno, colno, error) {
+      console.error('[Global Error]', {message, source, lineno, colno, error});
+      return false;
+    };
+    
+    window.addEventListener('unhandledrejection', function(event) {
+      console.error('[Unhandled Promise]', event.reason);
+    });
+    
+    console.log('[Anchor] Page loading...');
+  </script>
+  
   <!-- Service Worker Registration with version busting -->
   <script>
     // Unregister old service workers and register new one
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
+        console.log('[PWA] Starting service worker cleanup...');
+        
         // First, unregister all existing service workers
         navigator.serviceWorker.getRegistrations().then(registrations => {
+          console.log('[PWA] Found', registrations.length, 'service workers');
           registrations.forEach(registration => {
             registration.unregister();
           });
@@ -37,6 +55,7 @@
         // Clear all caches
         if ('caches' in window) {
           caches.keys().then(names => {
+            console.log('[PWA] Found', names.length, 'caches');
             names.forEach(name => {
               caches.delete(name);
             });
@@ -47,10 +66,10 @@
         setTimeout(() => {
           navigator.serviceWorker.register('/service-worker.js?v=2')
             .then(registration => {
-              console.log('[PWA] Service Worker v2 registered');
+              console.log('[PWA] Service Worker v2 registered successfully');
             })
             .catch(error => {
-              console.log('[PWA] Service Worker registration failed:', error);
+              console.error('[PWA] Service Worker registration failed:', error);
             });
         }, 100);
       });

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,10 +9,18 @@ import {
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import InstallPrompt from './install-prompt';
 
 export default function HomeScreen() {
   const router = useRouter();
+
+  useEffect(() => {
+    console.log('[HomeScreen] Component mounted');
+    return () => {
+      console.log('[HomeScreen] Component unmounted');
+    };
+  }, []);
+
+  console.log('[HomeScreen] Rendering');
 
   return (
     <SafeAreaView style={styles.container}>
@@ -34,7 +42,10 @@ export default function HomeScreen() {
         <View style={styles.actionsContainer}>
           <TouchableOpacity
             style={[styles.actionButton, styles.primaryButton]}
-            onPress={() => router.push('/outgoing')}
+            onPress={() => {
+              console.log('[HomeScreen] Navigate to outgoing');
+              router.push('/outgoing');
+            }}
             activeOpacity={0.8}
           >
             <View style={styles.buttonContent}>
@@ -48,7 +59,10 @@ export default function HomeScreen() {
 
           <TouchableOpacity
             style={[styles.actionButton, styles.secondaryButton]}
-            onPress={() => router.push('/incoming')}
+            onPress={() => {
+              console.log('[HomeScreen] Navigate to incoming');
+              router.push('/incoming');
+            }}
             activeOpacity={0.8}
           >
             <View style={styles.buttonContent}>
@@ -59,8 +73,7 @@ export default function HomeScreen() {
         </View>
 
         {/* Footer Info */}
-        <View style={styles.footer}>
-        </View>
+        <View style={styles.footer} />
       </View>
     </SafeAreaView>
   );
@@ -140,11 +153,5 @@ const styles = StyleSheet.create({
   footer: {
     paddingVertical: 24,
     alignItems: 'center',
-  },
-  footerText: {
-    fontSize: 12,
-    color: '#606070',
-    textAlign: 'center',
-    lineHeight: 18,
   },
 });
