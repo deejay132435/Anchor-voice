@@ -53,9 +53,6 @@ export default function HomeScreen() {
             <View style={styles.buttonContent}>
               <Ionicons name="download" size={32} color="#fff" />
               <Text style={styles.buttonTitle}>Listen to a Voice Message</Text>
-              <Text style={styles.buttonDescription}>
-                Process incoming voice message
-              </Text>
             </View>
           </TouchableOpacity>
         </View>
