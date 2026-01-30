@@ -13,8 +13,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system/legacy';
-import { analyzeAudio, generateSuggestions, AudioAnalysisResponse } from '../services/apiService';
 
 export default function IncomingScreen() {
   const router = useRouter();
@@ -22,10 +20,9 @@ export default function IncomingScreen() {
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisResults, setAnalysisResults] = useState<AudioAnalysisResponse | null>(null);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
-  const [preparationCue, setPreparationCue] = useState<string>('');
+  const [hasAnalyzed, setHasAnalyzed] = useState(false);
+  const [insights, setInsights] = useState<string[]>([]);
+  const [examplePhrasing, setExamplePhrasing] = useState<string>('');
 
   useEffect(() => {
     return () => {
@@ -46,7 +43,7 @@ export default function IncomingScreen() {
         const asset = result.assets[0];
         setAudioUri(asset.uri);
         
-        // Automatically analyze the audio
+        // DO NOT auto-play - analyze first
         await analyzeIncomingAudio(asset.uri);
       }
     } catch (error) {
@@ -57,52 +54,29 @@ export default function IncomingScreen() {
 
   const analyzeIncomingAudio = async (uri: string) => {
     setIsAnalyzing(true);
+    setHasAnalyzed(false);
+    
     try {
-      // Read audio file and convert to base64
-      const base64Audio = await FileSystem.readAsStringAsync(uri, {
-        encoding: 'base64',
-      });
-
-      // Get file info
-      const fileInfo = await FileSystem.getInfoAsync(uri);
-      const estimatedDuration = 5; // Default estimate since we can't get exact duration easily
-
-      // Call analysis API
-      const results = await analyzeAudio(base64Audio, estimatedDuration);
-      setAnalysisResults(results);
-
-      // Generate preparation cue based on analysis
-      if (results.raised_voice || results.emotional_charge) {
-        setPreparationCue("Take a deep breath. You've got this.");
-      } else {
-        setPreparationCue("You've got this");
-      }
-
-      // Automatically load suggestions
-      await loadResponseSuggestions(results);
+      // Show "Analyzing..." for 800ms
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      // Mock analysis - Phase 1 MVP
+      // Phase 2 will call actual backend API
+      const mockInsights = [
+        "Raised intensity detected",
+        "Fast pacing may escalate"
+      ];
+      
+      const mockPhrasing = "I hear you. I need time to think about this before I respond.";
+      
+      setInsights(mockInsights);
+      setExamplePhrasing(mockPhrasing);
+      setHasAnalyzed(true);
     } catch (error) {
       console.error('Error analyzing audio:', error);
       Alert.alert('Error', 'Failed to analyze audio.');
     } finally {
       setIsAnalyzing(false);
-    }
-  };
-
-  const loadResponseSuggestions = async (results: AudioAnalysisResponse) => {
-    setIsLoadingSuggestions(true);
-    try {
-      const response = await generateSuggestions(results, 'incoming');
-      setSuggestions(response.suggestions);
-    } catch (error) {
-      console.error('Error loading suggestions:', error);
-      // Use default suggestions on error
-      setSuggestions([
-        "I need time to think about this. Let's talk when we're both calm.",
-        "I hear you, but I need to step away for now.",
-        "Let's take a break and come back to this later.",
-      ]);
-    } finally {
-      setIsLoadingSuggestions(false);
     }
   };
 
@@ -137,34 +111,19 @@ export default function IncomingScreen() {
     }
   };
 
-  const getResponseApproach = () => {
-    if (!analysisResults) return null;
-
-    if (analysisResults.raised_voice || analysisResults.emotional_charge) {
-      return {
-        title: 'Recommended Approach: Disengage',
-        description: 'The message shows signs of escalation. Consider taking space before responding.',
-        icon: 'shield-checkmark' as const,
-        color: '#e74c3c',
-      };
-    } else if (analysisResults.fast_pacing) {
-      return {
-        title: 'Recommended Approach: Pause & Reflect',
-        description: 'Take your time to process before responding. No rush.',
-        icon: 'time' as const,
-        color: '#f39c12',
-      };
-    } else {
-      return {
-        title: 'Recommended Approach: Calm Response',
-        description: 'The message seems relatively calm. Respond when ready.',
-        icon: 'checkmark-circle' as const,
-        color: '#27ae60',
-      };
-    }
+  const handleWait = () => {
+    // Clear state and go back
+    setAudioUri(null);
+    setInsights([]);
+    setExamplePhrasing('');
+    setHasAnalyzed(false);
+    router.back();
   };
 
-  const responseApproach = getResponseApproach();
+  const handleRecordResponse = () => {
+    // Navigate to outgoing screen to record a response
+    router.push('/outgoing');
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -172,10 +131,9 @@ export default function IncomingScreen() {
         {/* Instructions */}
         {!audioUri && (
           <View style={styles.instructionsSection}>
-            <Ionicons name="information-circle" size={48} color="#4a90e2" />
-            <Text style={styles.instructionsTitle}>Process Received Message</Text>
-            <Text style={styles.instructionsText}>
-              Select a voice message you received to get preparation cues and response suggestions.
+            <Text style={styles.groundingText}>You're in control.</Text>
+            <Text style={styles.instructionText}>
+              Select a voice message to prepare yourself before listening.
             </Text>
           </View>
         )}
@@ -188,113 +146,77 @@ export default function IncomingScreen() {
             activeOpacity={0.8}
           >
             <Ionicons name="folder-open" size={24} color="#fff" />
-            <Text style={styles.selectButtonText}>Select Audio File</Text>
+            <Text style={styles.selectButtonText}>Select Voice Message</Text>
           </TouchableOpacity>
-        )}
-
-        {/* Preparation Cue */}
-        {preparationCue && !isAnalyzing && (
-          <View style={styles.preparationCue}>
-            <Ionicons name="shield" size={32} color="#4a90e2" />
-            <Text style={styles.preparationText}>{preparationCue}</Text>
-          </View>
         )}
 
         {/* Analysis Loading */}
         {isAnalyzing && (
           <View style={styles.analysisSection}>
-            <ActivityIndicator size="large" color="#4a90e2" />
-            <Text style={styles.analyzingText}>Analyzing message...</Text>
+            <ActivityIndicator size="large" color="#9b59b6" />
+            <Text style={styles.analyzingText}>Analyzing...</Text>
           </View>
         )}
 
-        {/* Playback Section */}
-        {audioUri && !isAnalyzing && (
-          <View style={styles.playbackSection}>
-            <TouchableOpacity
-              style={styles.playButton}
-              onPress={playAudio}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name={isPlaying ? 'pause-circle' : 'play-circle'}
-                size={64}
-                color="#4a90e2"
-              />
-            </TouchableOpacity>
-            <Text style={styles.playHint}>
-              {isPlaying ? 'Playing message...' : 'Tap to listen'}
-            </Text>
-          </View>
-        )}
-
-        {/* Response Approach */}
-        {responseApproach && !isAnalyzing && (
-          <View style={[
-            styles.approachSection,
-            { borderLeftColor: responseApproach.color }
-          ]}>
-            <View style={styles.approachHeader}>
-              <Ionicons name={responseApproach.icon} size={24} color={responseApproach.color} />
-              <Text style={styles.approachTitle}>{responseApproach.title}</Text>
+        {/* Analysis Results - What to Expect */}
+        {hasAnalyzed && !isAnalyzing && (
+          <View style={styles.resultsContainer}>
+            {/* What to Expect */}
+            <View style={styles.expectSection}>
+              <Text style={styles.expectTitle}>What to expect:</Text>
+              {insights.map((insight, index) => (
+                <View key={index} style={styles.insightRow}>
+                  <View style={styles.insightDot} />
+                  <Text style={styles.insightText}>{insight}</Text>
+                </View>
+              ))}
             </View>
-            <Text style={styles.approachDescription}>{responseApproach.description}</Text>
-          </View>
-        )}
 
-        {/* Response Suggestions */}
-        {isLoadingSuggestions && (
-          <View style={styles.loadingSuggestions}>
-            <ActivityIndicator size="small" color="#4a90e2" />
-            <Text style={styles.loadingText}>Loading suggestions...</Text>
-          </View>
-        )}
+            {/* Example Phrasing */}
+            <View style={styles.phrasingSection}>
+              <Text style={styles.phrasingTitle}>If you need to respond:</Text>
+              <View style={styles.phrasingCard}>
+                <Text style={styles.phrasingText}>{examplePhrasing}</Text>
+              </View>
+            </View>
 
-        {suggestions.length > 0 && !isLoadingSuggestions && (
-          <View style={styles.suggestionsSection}>
-            <View style={styles.suggestionsHeader}>
-              <Text style={styles.suggestionsTitle}>Response Examples</Text>
+            {/* User Choices */}
+            <View style={styles.choicesContainer}>
               <TouchableOpacity
-                onPress={() => Alert.alert(
-                  'About Responses',
-                  'AI-generated examples to help you respond calmly and constructively.'
-                )}
+                style={[styles.choiceButton, styles.listenButton]}
+                onPress={playAudio}
+                activeOpacity={0.8}
               >
-                <Ionicons name="information-circle-outline" size={22} color="#9b59b6" />
+                <Ionicons name={isPlaying ? "pause" : "play"} size={20} color="#fff" />
+                <Text style={styles.choiceButtonText}>
+                  {isPlaying ? 'Pause' : 'Listen now'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.choiceButton, styles.waitButton]}
+                onPress={handleWait}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.choiceButtonText}>Wait</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.choiceButton, styles.recordButton]}
+                onPress={handleRecordResponse}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="mic" size={20} color="#fff" />
+                <Text style={styles.choiceButtonText}>Record a response</Text>
               </TouchableOpacity>
             </View>
-            {suggestions.map((suggestion, index) => (
-              <View key={index} style={styles.suggestionItem}>
-                <View style={styles.suggestionNumber}>
-                  <Text style={styles.suggestionNumberText}>{index + 1}</Text>
-                </View>
-                <Text style={styles.suggestionText}>{suggestion}</Text>
-              </View>
-            ))}
-          </View>
-        )}
 
-        {/* Action Buttons */}
-        {audioUri && !isAnalyzing && (
-          <View style={styles.actionButtons}>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.newMessageButton]}
-              onPress={() => {
-                setAudioUri(null);
-                setAnalysisResults(null);
-                setSuggestions([]);
-                setPreparationCue('');
-              }}
-            >
-              <Text style={styles.actionButtonText}>Process Another</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionButton, styles.doneButton]}
-              onPress={() => router.back()}
-            >
-              <Text style={styles.actionButtonText}>Done</Text>
-            </TouchableOpacity>
+            {/* Disclaimer */}
+            <View style={styles.disclaimerBox}>
+              <Text style={styles.disclaimerText}>
+                Coaching only. Not therapy or legal advice. If you feel unsafe, step away and seek help.
+              </Text>
+            </View>
           </View>
         )}
       </ScrollView>
@@ -321,6 +243,13 @@ const styles = StyleSheet.create({
     color: '#9b59b6',
     fontWeight: '500',
     textAlign: 'center',
+    marginBottom: 16,
+  },
+  instructionText: {
+    fontSize: 14,
+    color: '#a0a0b0',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   selectButton: {
     flexDirection: 'row',
@@ -337,140 +266,107 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
   },
-  preparationCue: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1a0a1f',
-    padding: 20,
-    borderRadius: 12,
-    marginBottom: 24,
-    gap: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: '#9b59b6',
-  },
-  preparationText: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
-  },
   analysisSection: {
     alignItems: 'center',
     padding: 32,
+    marginTop: 48,
   },
   analyzingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#a0a0b0',
+    color: '#9b59b6',
+    fontWeight: '500',
   },
-  playbackSection: {
-    alignItems: 'center',
-    marginBottom: 32,
+  resultsContainer: {
+    marginTop: 16,
+    gap: 20,
   },
-  playButton: {
-    alignItems: 'center',
-  },
-  playHint: {
-    marginTop: 12,
-    fontSize: 14,
-    color: '#a0a0b0',
-  },
-  approachSection: {
+  expectSection: {
     backgroundColor: '#1a0a1f',
     borderRadius: 12,
     padding: 20,
-    marginBottom: 24,
-    borderLeftWidth: 4,
+    borderLeftWidth: 3,
+    borderLeftColor: '#9b59b6',
   },
-  approachHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    gap: 12,
-  },
-  approachTitle: {
-    flex: 1,
+  expectTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#fff',
+    marginBottom: 12,
   },
-  approachDescription: {
+  insightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 10,
+  },
+  insightDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#9b59b6',
+  },
+  insightText: {
+    flex: 1,
     fontSize: 14,
     color: '#d0d0d0',
-    lineHeight: 20,
   },
-  loadingSuggestions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
+  phrasingSection: {
     gap: 12,
   },
-  loadingText: {
+  phrasingTitle: {
     fontSize: 14,
+    fontWeight: '500',
     color: '#a0a0b0',
   },
-  suggestionsSection: {
+  phrasingCard: {
     backgroundColor: '#1a0a1f',
     borderRadius: 12,
-    padding: 20,
-    marginBottom: 24,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#9b59b6',
   },
-  suggestionsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  suggestionsTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  suggestionItem: {
-    flexDirection: 'row',
-    marginBottom: 16,
-    gap: 12,
-  },
-  suggestionNumber: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#9b59b6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  suggestionNumberText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  suggestionText: {
-    flex: 1,
+  phrasingText: {
     fontSize: 15,
     color: '#e0e0e0',
     lineHeight: 22,
   },
-  actionButtons: {
-    flexDirection: 'row',
+  choicesContainer: {
     gap: 12,
     marginTop: 8,
   },
-  actionButton: {
-    flex: 1,
+  choiceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: 16,
     borderRadius: 12,
-    alignItems: 'center',
+    gap: 8,
   },
-  newMessageButton: {
+  listenButton: {
+    backgroundColor: '#9b59b6',
+  },
+  waitButton: {
     backgroundColor: '#6c3483',
   },
-  doneButton: {
+  recordButton: {
     backgroundColor: '#27ae60',
   },
-  actionButtonText: {
+  choiceButtonText: {
     fontSize: 16,
     color: '#fff',
     fontWeight: '600',
+  },
+  disclaimerBox: {
+    backgroundColor: '#1a0a1f',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+  },
+  disclaimerText: {
+    fontSize: 11,
+    color: '#808080',
+    lineHeight: 16,
+    textAlign: 'center',
   },
 });
