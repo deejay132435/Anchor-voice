@@ -111,14 +111,29 @@ export default function OutgoingScreen() {
       setRecordedUri(uri);
       setRecording(null);
 
-      // Automatically analyze and load suggestions after recording
+      // CRITICAL: Automatically trigger analysis immediately after recording stops
       if (uri) {
+        // Show analyzing state
+        setIsLoadingSuggestions(true);
+        
+        // Run analysis (this sets analysisResults but we don't need them for mock)
         await analyzeRecording(uri);
-        // Start loading suggestions immediately after analysis
-        loadSuggestions();
+        
+        // Wait 800ms for "Analyzing..." display
+        await new Promise(resolve => setTimeout(resolve, 800));
+        
+        // Show mock suggestions
+        const mockSuggestions = [
+          "I'm getting heated. I need to pause before this goes any further."
+        ];
+        
+        setSuggestions(mockSuggestions);
+        setShowSuggestions(true);
+        setIsLoadingSuggestions(false);
       }
     } catch (err) {
       console.error('Failed to stop recording', err);
+      setIsLoadingSuggestions(false);
       Alert.alert('Error', 'Failed to stop recording.');
     }
   };
