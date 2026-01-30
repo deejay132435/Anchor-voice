@@ -346,21 +346,9 @@ export default function OutgoingScreen() {
             <View style={styles.rewritesSection}>
               <Text style={styles.rewritesTitle}>Try saying:</Text>
               {suggestions.map((suggestion, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={styles.rewriteCard}
-                  onPress={() => {
-                    // Copy to clipboard
-                    Alert.alert('Copied', 'Example copied to clipboard');
-                  }}
-                  activeOpacity={0.7}
-                >
+                <View key={index} style={styles.rewriteCard}>
                   <Text style={styles.rewriteText}>{suggestion}</Text>
-                  <View style={styles.copyIndicator}>
-                    <Ionicons name="copy-outline" size={16} color="#9b59b6" />
-                    <Text style={styles.copyText}>Tap to copy</Text>
-                  </View>
-                </TouchableOpacity>
+                </View>
               ))}
             </View>
 
@@ -669,18 +657,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#e0e0e0',
     lineHeight: 22,
-    marginBottom: 8,
-  },
-  copyIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 4,
-  },
-  copyText: {
-    fontSize: 12,
-    color: '#9b59b6',
-    fontWeight: '500',
   },
   disclaimerBox: {
     backgroundColor: '#1a0a1f',
