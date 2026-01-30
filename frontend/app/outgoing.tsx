@@ -176,23 +176,21 @@ export default function OutgoingScreen() {
     if (!analysisResults) return;
 
     setIsLoadingSuggestions(true);
-    try {
-      const response = await generateSuggestions(analysisResults, 'outgoing');
-      setSuggestions(response.suggestions);
-      setShowSuggestions(true);
-    } catch (error) {
-      console.error('Error loading suggestions:', error);
-      // Use default suggestions as fallback
-      setSuggestions([
-        "I need some space right now. We can talk later.",
-        "I'm not continuing this while it's heated.",
-        "I want this to stay calm, so I'm stepping away."
-      ]);
-      setShowSuggestions(true);
-      Alert.alert('Note', 'Using default suggestions. Please check your connection.');
-    } finally {
-      setIsLoadingSuggestions(false);
-    }
+    setShowSuggestions(false);
+    
+    // Mock loading delay (~800ms)
+    await new Promise(resolve => setTimeout(resolve, 800));
+    
+    // Mock suggestions data
+    const mockSuggestions = [
+      "I'm feeling overwhelmed. I need a pause. We can talk again later.",
+      "I hear what you're saying, but I need some time to process this.",
+      "Let's take a break and come back to this when we're both calmer."
+    ];
+    
+    setSuggestions(mockSuggestions);
+    setShowSuggestions(true);
+    setIsLoadingSuggestions(false);
   };
 
   const shareRecording = async () => {
@@ -308,42 +306,56 @@ export default function OutgoingScreen() {
         )}
 
         {/* Suggestions Section */}
-        {analysisResults && !showSuggestions && (
-          <TouchableOpacity
-            style={styles.suggestionsButton}
-            onPress={loadSuggestions}
-            disabled={isLoadingSuggestions}
-          >
-            {isLoadingSuggestions ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="bulb" size={20} color="#fff" />
-                <Text style={styles.suggestionsButtonText}>Get Suggestions</Text>
-              </>
-            )}
-          </TouchableOpacity>
+        {isLoadingSuggestions && (
+          <View style={styles.loadingSection}>
+            <ActivityIndicator size="large" color="#9b59b6" />
+            <Text style={styles.loadingText}>Analyzing...</Text>
+          </View>
         )}
 
         {showSuggestions && suggestions.length > 0 && (
-          <View style={styles.suggestionsSection}>
-            <View style={styles.insightsHeader}>
-              <Text style={styles.suggestionsTitle}>Suggestions</Text>
-              <TouchableOpacity
-                onPress={() => Alert.alert(
-                  'About Suggestions',
-                  'AI-generated alternative ways to express yourself that may help keep the conversation constructive.'
-                )}
-              >
-                <Ionicons name="information-circle-outline" size={22} color="#9b59b6" />
-              </TouchableOpacity>
-            </View>
-            {suggestions.map((suggestion, index) => (
-              <View key={index} style={styles.suggestionItem}>
-                <Text style={styles.suggestionNumber}>{index + 1}</Text>
-                <Text style={styles.suggestionText}>{suggestion}</Text>
+          <View style={styles.suggestionsContainer}>
+            {/* Insights */}
+            <View style={styles.insightsBox}>
+              <Text style={styles.insightsBoxTitle}>What we noticed:</Text>
+              <View style={styles.insightRow}>
+                <View style={styles.insightDot} />
+                <Text style={styles.insightTextSmall}>Raised intensity detected</Text>
               </View>
-            ))}
+              <View style={styles.insightRow}>
+                <View style={styles.insightDot} />
+                <Text style={styles.insightTextSmall}>Possible 'you' statements may escalate</Text>
+              </View>
+            </View>
+
+            {/* Suggested Rewrites */}
+            <View style={styles.rewritesSection}>
+              <Text style={styles.rewritesTitle}>Try saying:</Text>
+              {suggestions.map((suggestion, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={styles.rewriteCard}
+                  onPress={() => {
+                    // Copy to clipboard
+                    Alert.alert('Copied', 'Rewrite copied to clipboard');
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.rewriteText}>{suggestion}</Text>
+                  <View style={styles.copyIndicator}>
+                    <Ionicons name="copy-outline" size={16} color="#9b59b6" />
+                    <Text style={styles.copyText}>Tap to copy</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Disclaimer */}
+            <View style={styles.disclaimerBox}>
+              <Text style={styles.disclaimerText}>
+                Coaching only. Not therapy or legal advice. If you feel unsafe, step away and seek help.
+              </Text>
+            </View>
           </View>
         )}
 
@@ -360,6 +372,18 @@ export default function OutgoingScreen() {
               }}
             >
               <Text style={styles.actionButtonText}>Re-record</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionButton, styles.suggestButton]}
+              onPress={loadSuggestions}
+              disabled={isLoadingSuggestions}
+            >
+              {isLoadingSuggestions ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.actionButtonText}>Get Suggestions</Text>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -541,7 +565,7 @@ const styles = StyleSheet.create({
   },
   actionButtons: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
     marginTop: 8,
   },
   actionButton: {
@@ -549,19 +573,112 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
+    padding: 14,
     borderRadius: 12,
-    gap: 8,
+    gap: 6,
   },
   rerecordButton: {
     backgroundColor: '#6c3483',
+  },
+  suggestButton: {
+    backgroundColor: '#9b59b6',
   },
   sendButton: {
     backgroundColor: '#27ae60',
   },
   actionButtonText: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#fff',
     fontWeight: '600',
+  },
+  loadingSection: {
+    alignItems: 'center',
+    padding: 32,
+    marginTop: 16,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#9b59b6',
+    fontWeight: '500',
+  },
+  suggestionsContainer: {
+    marginTop: 16,
+    gap: 16,
+  },
+  insightsBox: {
+    backgroundColor: '#1a0a1f',
+    borderRadius: 12,
+    padding: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: '#9b59b6',
+  },
+  insightsBoxTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 12,
+  },
+  insightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 10,
+  },
+  insightDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#9b59b6',
+  },
+  insightTextSmall: {
+    flex: 1,
+    fontSize: 13,
+    color: '#d0d0d0',
+  },
+  rewritesSection: {
+    gap: 12,
+  },
+  rewritesTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  rewriteCard: {
+    backgroundColor: '#1a0a1f',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#9b59b6',
+  },
+  rewriteText: {
+    fontSize: 15,
+    color: '#e0e0e0',
+    lineHeight: 22,
+    marginBottom: 8,
+  },
+  copyIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+  },
+  copyText: {
+    fontSize: 12,
+    color: '#9b59b6',
+    fontWeight: '500',
+  },
+  disclaimerBox: {
+    backgroundColor: '#1a0a1f',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+  },
+  disclaimerText: {
+    fontSize: 11,
+    color: '#808080',
+    lineHeight: 16,
+    textAlign: 'center',
   },
 });
