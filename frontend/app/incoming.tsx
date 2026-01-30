@@ -8,7 +8,7 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
@@ -16,6 +16,7 @@ import * as DocumentPicker from 'expo-document-picker';
 
 export default function IncomingScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -25,12 +26,19 @@ export default function IncomingScreen() {
   const [examplePhrasing, setExamplePhrasing] = useState<string>('');
 
   useEffect(() => {
+    // Check if audio was shared from another app
+    if (params.sharedUri && typeof params.sharedUri === 'string') {
+      console.log('[Incoming] Shared audio received:', params.sharedUri);
+      setAudioUri(params.sharedUri);
+      analyzeIncomingAudio(params.sharedUri);
+    }
+
     return () => {
       if (sound) {
         sound.unloadAsync();
       }
     };
-  }, []);
+  }, [params.sharedUri]);
 
   const pickAudioFile = async () => {
     try {
@@ -60,8 +68,8 @@ export default function IncomingScreen() {
       // Show "Analyzing..." for 800ms
       await new Promise(resolve => setTimeout(resolve, 800));
       
-      // Mock analysis - Phase 1 MVP
-      // Phase 2 will call actual backend API
+      // Mock analysis - Phase 2 MVP
+      // Future: call actual backend API
       const mockInsights = [
         "Raised intensity detected",
         "Fast pacing may escalate"
@@ -121,9 +129,114 @@ export default function IncomingScreen() {
   };
 
   const handleRecordResponse = () => {
-    // Navigate to outgoing screen to record a response
-    router.push('/outgoing');
+    // Navigate to outgoing screen with incoming context
+    router.push({
+      pathname: '/outgoing',
+      params: {
+        incomingInsights: JSON.stringify(insights),
+        incomingPhrasing: examplePhrasing,
+      }
+    });
   };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Instructions */}
+        {!audioUri && (
+          <View style={styles.instructionsSection}>
+            <Text style={styles.groundingText}>You're in control.</Text>
+            <Text style={styles.instructionText}>
+              Select a voice message to prepare yourself before listening.
+            </Text>
+          </View>
+        )}
+
+        {/* Select Audio Button */}
+        {!audioUri && (
+          <TouchableOpacity
+            style={styles.selectButton}
+            onPress={pickAudioFile}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="folder-open" size={24} color="#fff" />
+            <Text style={styles.selectButtonText}>Select Voice Message</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Analysis Loading */}
+        {isAnalyzing && (
+          <View style={styles.analysisSection}>
+            <ActivityIndicator size="large" color="#9b59b6" />
+            <Text style={styles.analyzingText}>Analyzing...</Text>
+          </View>
+        )}
+
+        {/* Analysis Results - What to Expect */}
+        {hasAnalyzed && !isAnalyzing && (
+          <View style={styles.resultsContainer}>
+            {/* What to Expect */}
+            <View style={styles.expectSection}>
+              <Text style={styles.expectTitle}>What to expect:</Text>
+              {insights.map((insight, index) => (
+                <View key={index} style={styles.insightRow}>
+                  <View style={styles.insightDot} />
+                  <Text style={styles.insightText}>{insight}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Example Phrasing */}
+            <View style={styles.phrasingSection}>
+              <Text style={styles.phrasingTitle}>If you need to respond:</Text>
+              <View style={styles.phrasingCard}>
+                <Text style={styles.phrasingText}>{examplePhrasing}</Text>
+              </View>
+            </View>
+
+            {/* User Choices */}
+            <View style={styles.choicesContainer}>
+              <TouchableOpacity
+                style={[styles.choiceButton, styles.listenButton]}
+                onPress={playAudio}
+                activeOpacity={0.8}
+              >
+                <Ionicons name={isPlaying ? "pause" : "play"} size={20} color="#fff" />
+                <Text style={styles.choiceButtonText}>
+                  {isPlaying ? 'Pause' : 'Listen now'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.choiceButton, styles.waitButton]}
+                onPress={handleWait}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.choiceButtonText}>Wait</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.choiceButton, styles.recordButton]}
+                onPress={handleRecordResponse}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="mic" size={20} color="#fff" />
+                <Text style={styles.choiceButtonText}>Record a response</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Disclaimer */}
+            <View style={styles.disclaimerBox}>
+              <Text style={styles.disclaimerText}>
+                Coaching only. Not therapy or legal advice. If you feel unsafe, step away and seek help.
+              </Text>
+            </View>
+          </View>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
 
   return (
     <SafeAreaView style={styles.container}>

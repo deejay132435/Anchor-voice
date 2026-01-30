@@ -23,7 +23,21 @@
       "edgeToEdgeEnabled": true,
       "permissions": [
         "RECORD_AUDIO"
-      ]
+      ],
+      "intentFilters": [
+        {
+          "action": "android.intent.action.SEND",
+          "category": [
+            "android.intent.category.DEFAULT"
+          ],
+          "data": [
+            {
+              "mimeType": "audio/*"
+            }
+          ]
+        }
+      ],
+      "package": "com.anchor.voice"
     },
     "web": {
       "bundler": "metro",
