@@ -184,11 +184,11 @@ export default function OutgoingScreen() {
     // Mock loading delay (~800ms)
     await new Promise(resolve => setTimeout(resolve, 800));
     
-    // Mock suggestions data
+    // Mock suggestions - natural, spoken, voice-first
     const mockSuggestions = [
-      "I'm feeling overwhelmed. I need a pause. We can talk again later.",
-      "I hear what you're saying, but I need some time to process this.",
-      "Let's take a break and come back to this when we're both calmer."
+      "I'm getting heated. I need to pause.",
+      "I'm overwhelmed and need a moment.",
+      "I want to keep this respectful."
     ];
     
     setSuggestions(mockSuggestions);
