@@ -111,9 +111,11 @@ export default function OutgoingScreen() {
       setRecordedUri(uri);
       setRecording(null);
 
-      // Automatically analyze after recording
+      // Automatically analyze and load suggestions after recording
       if (uri) {
         await analyzeRecording(uri);
+        // Start loading suggestions immediately after analysis
+        loadSuggestions();
       }
     } catch (err) {
       console.error('Failed to stop recording', err);
@@ -361,8 +363,8 @@ export default function OutgoingScreen() {
           </View>
         )}
 
-        {/* Action Buttons */}
-        {recordedUri && !isRecording && (
+        {/* Action Buttons - Only Re-record and Send Anyway */}
+        {recordedUri && !isRecording && !isLoadingSuggestions && (
           <View style={styles.actionButtons}>
             <TouchableOpacity
               style={[styles.actionButton, styles.rerecordButton]}
@@ -373,18 +375,6 @@ export default function OutgoingScreen() {
               }}
             >
               <Text style={styles.actionButtonText}>Re-record</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionButton, styles.suggestButton]}
-              onPress={loadSuggestions}
-              disabled={isLoadingSuggestions}
-            >
-              {isLoadingSuggestions ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.actionButtonText}>Get Suggestions</Text>
-              )}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -566,7 +556,7 @@ const styles = StyleSheet.create({
   },
   actionButtons: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 12,
     marginTop: 8,
   },
   actionButton: {
@@ -574,15 +564,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 14,
+    padding: 16,
     borderRadius: 12,
     gap: 6,
   },
   rerecordButton: {
     backgroundColor: '#6c3483',
-  },
-  suggestButton: {
-    backgroundColor: '#9b59b6',
   },
   sendButton: {
     backgroundColor: '#27ae60',
