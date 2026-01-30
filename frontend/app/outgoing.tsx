@@ -184,11 +184,9 @@ export default function OutgoingScreen() {
     // Mock loading delay (~800ms)
     await new Promise(resolve => setTimeout(resolve, 800));
     
-    // Mock suggestions - natural, spoken, voice-first
+    // Mock suggestions - single focused example phrase
     const mockSuggestions = [
-      "I'm getting heated. I need to pause.",
-      "I'm overwhelmed and need a moment.",
-      "I want to keep this respectful."
+      "I'm getting heated. I need to pause before this goes any further."
     ];
     
     setSuggestions(mockSuggestions);
@@ -340,11 +338,11 @@ export default function OutgoingScreen() {
               </View>
               <View style={styles.insightRow}>
                 <View style={styles.insightDot} />
-                <Text style={styles.insightTextSmall}>Possible 'you' statements may escalate</Text>
+                <Text style={styles.insightTextSmall}>Fast pacing may escalate</Text>
               </View>
             </View>
 
-            {/* Suggested Rewrites */}
+            {/* Example Phrasing - Single focused option */}
             <View style={styles.rewritesSection}>
               <Text style={styles.rewritesTitle}>Try saying:</Text>
               {suggestions.map((suggestion, index) => (
@@ -353,7 +351,7 @@ export default function OutgoingScreen() {
                   style={styles.rewriteCard}
                   onPress={() => {
                     // Copy to clipboard
-                    Alert.alert('Copied', 'Rewrite copied to clipboard');
+                    Alert.alert('Copied', 'Example copied to clipboard');
                   }}
                   activeOpacity={0.7}
                 >
