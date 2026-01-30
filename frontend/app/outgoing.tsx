@@ -8,7 +8,7 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
@@ -18,6 +18,7 @@ import { analyzeAudio, generateSuggestions, AudioAnalysisResponse } from '../ser
 
 export default function OutgoingScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordedUri, setRecordedUri] = useState<string | null>(null);
@@ -29,6 +30,25 @@ export default function OutgoingScreen() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
+  
+  // Incoming context (from received message)
+  const [incomingInsights, setIncomingInsights] = useState<string[]>([]);
+  const [incomingPhrasing, setIncomingPhrasing] = useState<string>('');
+  const [showIncomingContext, setShowIncomingContext] = useState(true);
+
+  useEffect(() => {
+    // Check if we have incoming context from a received message
+    if (params.incomingInsights && params.incomingPhrasing) {
+      try {
+        const insights = JSON.parse(params.incomingInsights as string);
+        setIncomingInsights(insights);
+        setIncomingPhrasing(params.incomingPhrasing as string);
+        setShowIncomingContext(true);
+      } catch (error) {
+        console.error('Error parsing incoming context:', error);
+      }
+    }
+  }, [params]);
 
   useEffect(() => {
     // Request permissions on mount
@@ -246,6 +266,27 @@ export default function OutgoingScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Incoming Context Card (when responding to a received message) */}
+        {incomingInsights.length > 0 && showIncomingContext && (
+          <View style={styles.incomingContextCard}>
+            <View style={styles.incomingHeader}>
+              <Ionicons name="chatbubble-ellipses" size={16} color="#9b59b6" />
+              <Text style={styles.incomingHeaderText}>Responding to received message</Text>
+              <TouchableOpacity onPress={() => setShowIncomingContext(false)}>
+                <Ionicons name="close-circle" size={20} color="#a0a0b0" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.incomingContent}>
+              <Text style={styles.incomingLabel}>What to expect:</Text>
+              {incomingInsights.map((insight, index) => (
+                <Text key={index} style={styles.incomingInsight}>• {insight}</Text>
+              ))}
+              <Text style={styles.incomingLabel}>If you need to respond:</Text>
+              <Text style={styles.incomingPhrasing}>{incomingPhrasing}</Text>
+            </View>
+          </View>
+        )}
+
         {/* Recording Section */}
         <View style={styles.recordingSection}>
           {/* Grounding Line */}
@@ -692,5 +733,45 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#fff',
     fontWeight: '600',
+  },
+  incomingContextCard: {
+    backgroundColor: '#1a0a1f',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: '#9b59b6',
+  },
+  incomingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  incomingHeaderText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#9b59b6',
+    fontWeight: '600',
+  },
+  incomingContent: {
+    gap: 6,
+  },
+  incomingLabel: {
+    fontSize: 11,
+    color: '#a0a0b0',
+    fontWeight: '500',
+    marginTop: 6,
+  },
+  incomingInsight: {
+    fontSize: 12,
+    color: '#d0d0d0',
+    lineHeight: 18,
+  },
+  incomingPhrasing: {
+    fontSize: 13,
+    color: '#e0e0e0',
+    lineHeight: 19,
+    fontStyle: 'italic',
   },
 });
