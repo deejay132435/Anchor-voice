@@ -43,7 +43,10 @@ export default function OutgoingScreen() {
     })();
 
     return () => {
-      // Cleanup on unmount
+      // Cleanup on unmount - clear suggestions when navigating away
+      setSuggestions([]);
+      setShowSuggestions(false);
+      
       if (recording) {
         recording.stopAndUnloadAsync();
       }
@@ -205,6 +208,10 @@ export default function OutgoingScreen() {
 
       await Sharing.shareAsync(recordedUri);
       
+      // Clear suggestions after successful send
+      setSuggestions([]);
+      setShowSuggestions(false);
+      
       // After sharing, navigate back and clean up
       setTimeout(() => {
         router.back();
@@ -305,7 +312,7 @@ export default function OutgoingScreen() {
           </View>
         )}
 
-        {/* Suggestions Section */}
+        {/* Suggestions Section - Always visible once loaded, even during re-recording */}
         {isLoadingSuggestions && (
           <View style={styles.loadingSection}>
             <ActivityIndicator size="large" color="#9b59b6" />
@@ -315,6 +322,15 @@ export default function OutgoingScreen() {
 
         {showSuggestions && suggestions.length > 0 && (
           <View style={styles.suggestionsContainer}>
+            {isRecording && (
+              <View style={styles.recordingBanner}>
+                <View style={styles.recordingDot} />
+                <Text style={styles.recordingBannerText}>
+                  Recording - Read these aloud if helpful
+                </Text>
+              </View>
+            )}
+            
             {/* Insights */}
             <View style={styles.insightsBox}>
               <Text style={styles.insightsBoxTitle}>What we noticed:</Text>
@@ -367,8 +383,7 @@ export default function OutgoingScreen() {
               onPress={() => {
                 setRecordedUri(null);
                 setAnalysisResults(null);
-                setSuggestions([]);
-                setShowSuggestions(false);
+                // DO NOT clear suggestions - keep them visible for reference during re-record
               }}
             >
               <Text style={styles.actionButtonText}>Re-record</Text>
@@ -680,5 +695,26 @@ const styles = StyleSheet.create({
     color: '#808080',
     lineHeight: 16,
     textAlign: 'center',
+  },
+  recordingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e74c3c',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    gap: 10,
+  },
+  recordingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#fff',
+  },
+  recordingBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#fff',
+    fontWeight: '600',
   },
 });
