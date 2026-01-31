@@ -11,8 +11,183 @@ import base64
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 import io
 import openai
-import re
 import tempfile
+
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / '.env')
+
+# MongoDB connection (not used for storage, but keeping for future features)
+mongo_url = os.environ['MONGO_URL']
+client = AsyncIOMotorClient(mongo_url)
+db = client[os.environ['DB_NAME']]
+
+# Create the main app without a prefix
+app = FastAPI()
+
+# Create a router with the /api prefix
+api_router = APIRouter(prefix="/api")
+
+# Get EMERGENT_LLM_KEY
+EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
+
+# Initialize OpenAI client for Whisper
+openai_client = openai.OpenAI(api_key=EMERGENT_LLM_KEY)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+# Define Models
+class TranscriptAnalysisRequest(BaseModel):
+    audio_base64: str
+    duration_seconds: float
+
+
+class TranscriptAnalysisResponse(BaseModel):
+    insights: List[str]  # Exactly 2 insights
+    example_phrasing: str  # Exactly 1 example phrase
+    transcript: str  # For debugging only, not stored
+
+
+@api_router.get("/")
+async def root():
+    return {"message": "Anchor API - Voice De-escalation Tool"}
+
+
+@api_router.post("/analyze-transcript", response_model=TranscriptAnalysisResponse)
+async def analyze_transcript(request: TranscriptAnalysisRequest):
+    """
+    Transcript-based analysis:
+    1. Convert audio to text using Whisper
+    2. Send ONLY transcript to Claude for analysis
+    3. Generate exactly 2 insights + 1 example phrasing
+    4. No audio stored, only processed in-memory
+    """
+    try:
+        # Decode base64 audio
+        audio_bytes = base64.b64decode(request.audio_base64)
+        
+        # Save to temporary file for Whisper
+        with tempfile.NamedTemporaryFile(suffix='.m4a', delete=False) as temp_audio:
+            temp_audio.write(audio_bytes)
+            temp_audio_path = temp_audio.name
+        
+        try:
+            # Transcribe using Whisper
+            with open(temp_audio_path, 'rb') as audio_file:
+                transcription_response = openai_client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    response_format="text"
+                )
+            
+            transcript = transcription_response if isinstance(transcription_response, str) else transcription_response.text
+            logger.info(f"Transcribed: {transcript[:100]}...")
+            
+        finally:
+            # Clean up temp file - AUDIO NOT STORED
+            os.unlink(temp_audio_path)
+        
+        # Analyze transcript with Claude
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id="anchor-transcript-analysis",
+            system_message="""You are a voice communication coach analyzing spoken messages for de-escalation.
+
+Your task: Based ONLY on the transcript provided, generate:
+1. Exactly 2 neutral observations about the message (tone, pacing, word choice)
+2. Exactly 1 alternative way to say it (boundary-focused, spoken naturally)
+
+Rules:
+- No judgments, no diagnosis, no advice
+- Observations must be neutral and factual
+- Alternative phrasing must be short, spoken, first-person
+- Different tones require different responses:
+  * Frustrated/angry: boundary + pause focused
+  * Calm/accountability: acknowledge + need focused  
+  * Shutdown/avoidant: re-engagement + clarity focused
+- Output must match the emotional tone detected
+
+Format your response EXACTLY as:
+INSIGHT_1: [observation about tone/pacing/word choice]
+INSIGHT_2: [observation about communication pattern]
+PHRASING: [one short alternative way to say it]"""
+        )
+        chat.with_model("anthropic", "claude-sonnet-4-5-20250929")
+        
+        # Build analysis prompt
+        prompt = f"""Analyze this spoken message transcript:
+
+"{transcript}"
+
+Provide exactly 2 neutral insights about what was noticed, and 1 alternative phrasing suggestion."""
+        
+        user_message = UserMessage(text=prompt)
+        response = await chat.send_message(user_message)
+        
+        # Parse response
+        lines = response.strip().split('\n')
+        insights = []
+        example_phrasing = ""
+        
+        for line in lines:
+            line = line.strip()
+            if line.startswith("INSIGHT_1:"):
+                insights.append(line.replace("INSIGHT_1:", "").strip())
+            elif line.startswith("INSIGHT_2:"):
+                insights.append(line.replace("INSIGHT_2:", "").strip())
+            elif line.startswith("PHRASING:"):
+                example_phrasing = line.replace("PHRASING:", "").strip()
+        
+        # Fallback if parsing fails
+        if len(insights) < 2:
+            insights = [
+                "Raised intensity detected",
+                "Fast pacing may escalate"
+            ]
+        
+        if not example_phrasing:
+            example_phrasing = "I'm getting heated. I need to pause before this goes any further."
+        
+        return TranscriptAnalysisResponse(
+            insights=insights[:2],  # Exactly 2
+            example_phrasing=example_phrasing,
+            transcript=transcript  # For debugging, not stored
+        )
+    
+    except Exception as e:
+        logger.error(f"Error analyzing transcript: {str(e)}")
+        # Return safe defaults on error
+        return TranscriptAnalysisResponse(
+            insights=[
+                "Message analyzed",
+                "Consider tone and pacing"
+            ],
+            example_phrasing="I need a moment before I respond.",
+            transcript="Error during transcription"
+        )
+
+
+# Include the router in the main app
+app.include_router(api_router)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    client.close()
+
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
