@@ -131,25 +131,56 @@ export default function OutgoingScreen() {
       setRecordedUri(uri);
       setRecording(null);
 
-      // CRITICAL: Automatically trigger analysis immediately after recording stops
+      // CRITICAL: Automatically trigger transcript-based analysis
       if (uri) {
         // Show analyzing state
         setIsLoadingSuggestions(true);
         
-        // Run analysis (this sets analysisResults but we don't need them for mock)
-        await analyzeRecording(uri);
-        
-        // Wait 800ms for "Analyzing..." display
-        await new Promise(resolve => setTimeout(resolve, 800));
-        
-        // Show mock suggestions
-        const mockSuggestions = [
-          "I'm getting heated. I need to pause before this goes any further."
-        ];
-        
-        setSuggestions(mockSuggestions);
-        setShowSuggestions(true);
-        setIsLoadingSuggestions(false);
+        try {
+          // Read audio file and convert to base64
+          const base64Audio = await FileSystem.readAsStringAsync(uri, {
+            encoding: 'base64',
+          });
+          
+          // Call new transcript analysis endpoint
+          const response = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL || ''}/api/analyze-transcript`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              audio_base64: base64Audio,
+              duration_seconds: recordingDuration || 1,
+            }),
+          });
+          
+          if (!response.ok) {
+            throw new Error('Failed to analyze transcript');
+          }
+          
+          const data = await response.json();
+          console.log('[Transcript Analysis]', data);
+          
+          // Set dynamic insights and phrasing
+          const mockAnalysis = {
+            raised_voice: false,
+            fast_pacing: false,
+            emotional_charge: false,
+            insights: data.insights || ["Message analyzed", "Consider tone"],
+          };
+          
+          setAnalysisResults(mockAnalysis as any);
+          setSuggestions([data.example_phrasing || "I need a moment before I respond."]);
+          setShowSuggestions(true);
+          
+        } catch (error) {
+          console.error('Error analyzing transcript:', error);
+          // Fallback to defaults
+          setSuggestions(["I'm getting heated. I need to pause before this goes any further."]);
+          setShowSuggestions(true);
+        } finally {
+          setIsLoadingSuggestions(false);
+        }
       }
     } catch (err) {
       console.error('Failed to stop recording', err);
@@ -387,17 +418,15 @@ export default function OutgoingScreen() {
               </View>
             )}
             
-            {/* Insights */}
+            {/* What we noticed */}
             <View style={styles.insightsBox}>
               <Text style={styles.insightsBoxTitle}>What we noticed:</Text>
-              <View style={styles.insightRow}>
-                <View style={styles.insightDot} />
-                <Text style={styles.insightTextSmall}>Raised intensity detected</Text>
-              </View>
-              <View style={styles.insightRow}>
-                <View style={styles.insightDot} />
-                <Text style={styles.insightTextSmall}>Fast pacing may escalate</Text>
-              </View>
+              {analysisResults?.insights.map((insight, index) => (
+                <View key={index} style={styles.insightRow}>
+                  <View style={styles.insightDot} />
+                  <Text style={styles.insightTextSmall}>{insight}</Text>
+                </View>
+              ))}
             </View>
 
             {/* Example Phrasing - Single focused option */}
