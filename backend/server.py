@@ -1,625 +1,612 @@
-from fastapi import FastAPI, APIRouter, File, UploadFile, HTTPException
-from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
-import logging
-from pathlib import Path
-from pydantic import BaseModel
-from typing import List, Optional
 import base64
-from emergentintegrations.llm.chat import LlmChat, UserMessage
 import io
-import openai
+import os
+import re
 import tempfile
+from pathlib import Path
+from typing import Dict, Any, List, Optional
 
+import numpy as np
+from fastapi import FastAPI, APIRouter, HTTPException
+from starlette.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from dotenv import load_dotenv
+
+# Load environment variables
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection (not used for storage, but keeping for future features)
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+app = FastAPI(title="Anchor API", description="Voice de-escalation analysis API")
 
-# Create the main app without a prefix
-app = FastAPI()
-
-# Create a router with the /api prefix
-api_router = APIRouter(prefix="/api")
-
-# Get EMERGENT_LLM_KEY
-EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
-
-# Initialize OpenAI client for Whisper
-openai_client = openai.OpenAI(api_key=EMERGENT_LLM_KEY)
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+# Add CORS middleware for frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-logger = logging.getLogger(__name__)
+
+api = APIRouter(prefix="/api")
+
+# Try to import librosa for audio analysis
+try:
+    import librosa
+    import soundfile as sf
+    LIBROSA_AVAILABLE = True
+except ImportError:
+    LIBROSA_AVAILABLE = False
+
+# Try to import OpenAI for Whisper transcription
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+
+# Try to import anthropic for Claude API (direct SDK)
+try:
+    import anthropic
+    CLAUDE_AVAILABLE = True
+except ImportError:
+    CLAUDE_AVAILABLE = False
 
 
-# Define Models
-class TranscriptAnalysisRequest(BaseModel):
-    audio_base64: str
-    duration_seconds: float
+# Escalation patterns - words/phrases that tend to escalate conflicts
+ESCALATION_PATTERNS = {
+    "profanity": [
+        r"\b(fuck|shit|damn|hell|ass|bitch|bastard|crap)\b",
+    ],
+    "absolutes": [
+        r"\b(always|never|every\s*time|constantly)\b",
+    ],
+    "blame_language": [
+        r"\b(you\s+always|you\s+never|your\s+fault|you\s+made\s+me|because\s+of\s+you)\b",
+    ],
+    "labelling": [
+        r"\b(idiot|stupid|dumb|crazy|insane|pathetic|loser|worthless)\b",
+    ],
+    "threats": [
+        r"\b(or\s+else|you('ll)?\s+regret|watch\s+(out|yourself)|i('ll)?\s+make\s+you)\b",
+    ],
+    "dismissive": [
+        r"\b(whatever|don't\s+care|shut\s+up|who\s+cares|so\s+what)\b",
+    ],
+    "interrupting": [
+        r"\b(let\s+me\s+finish|stop\s+interrupting|listen\s+to\s+me)\b",
+    ],
+}
 
 
-class TranscriptAnalysisResponse(BaseModel):
-    insights: List[str]  # Exactly 2 insights
-    example_phrasing: str  # Exactly 1 example phrase
-    transcript: str  # For debugging only, not stored
-
-
-@api_router.get("/")
-async def root():
-    return {"message": "Anchor API - Voice De-escalation Tool"}
-
-
-@api_router.post("/analyze-transcript", response_model=TranscriptAnalysisResponse)
-async def analyze_transcript(request: TranscriptAnalysisRequest):
+def detect_escalation_words(text: str) -> Dict[str, List[str]]:
     """
-    Transcript-based analysis:
-    1. Convert audio to text using Whisper
-    2. Send ONLY transcript to Claude for analysis
-    3. Generate exactly 2 insights + 1 example phrasing
-    4. No audio stored, only processed in-memory
+    Detect escalating words/phrases in transcribed text.
+    Returns dict of category -> list of matched phrases.
     """
+    if not text:
+        return {}
+
+    text_lower = text.lower()
+    detected = {}
+
+    for category, patterns in ESCALATION_PATTERNS.items():
+        matches = []
+        for pattern in patterns:
+            found = re.findall(pattern, text_lower, re.IGNORECASE)
+            matches.extend(found)
+        if matches:
+            detected[category] = list(set(matches))
+
+    return detected
+
+
+async def transcribe_audio(audio_data: bytes) -> Optional[str]:
+    """
+    Transcribe audio using OpenAI Whisper API.
+    Returns transcription text or None if unavailable.
+    """
+    if not OPENAI_AVAILABLE:
+        return None
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return None
+
     try:
-        # Decode base64 audio
-        audio_bytes = base64.b64decode(request.audio_base64)
-        
-        # Save to temporary file for Whisper
-        with tempfile.NamedTemporaryFile(suffix='.m4a', delete=False) as temp_audio:
-            temp_audio.write(audio_bytes)
-            temp_audio_path = temp_audio.name
-        
+        client = openai.OpenAI(api_key=api_key)
+
+        # Write audio to temp file (Whisper API needs a file)
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            f.write(audio_data)
+            temp_path = f.name
+
         try:
-            # Transcribe using Whisper
-            with open(temp_audio_path, 'rb') as audio_file:
-                transcription_response = openai_client.audio.transcriptions.create(
+            with open(temp_path, "rb") as audio_file:
+                response = client.audio.transcriptions.create(
                     model="whisper-1",
                     file=audio_file,
                     response_format="text"
                 )
-            
-            transcript = transcription_response if isinstance(transcription_response, str) else transcription_response.text
-            logger.info(f"Transcribed: {transcript[:100]}...")
-            
+            return response.strip() if response else None
         finally:
-            # Clean up temp file - AUDIO NOT STORED
-            os.unlink(temp_audio_path)
-        
-        # Analyze transcript with Claude
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id="anchor-transcript-analysis",
-            system_message="""You are a voice communication coach analyzing spoken messages for de-escalation.
+            # Clean up temp file
+            os.unlink(temp_path)
 
-Your task: Based ONLY on the transcript provided, generate:
-1. Exactly 2 neutral observations about the message (tone, pacing, word choice)
-2. Exactly 1 alternative way to say it (boundary-focused, spoken naturally)
-
-Rules:
-- No judgments, no diagnosis, no advice
-- Observations must be neutral and factual
-- Alternative phrasing must be short, spoken, first-person
-- Different tones require different responses:
-  * Frustrated/angry: boundary + pause focused
-  * Calm/accountability: acknowledge + need focused  
-  * Shutdown/avoidant: re-engagement + clarity focused
-- Output must match the emotional tone detected
-
-Format your response EXACTLY as:
-INSIGHT_1: [observation about tone/pacing/word choice]
-INSIGHT_2: [observation about communication pattern]
-PHRASING: [one short alternative way to say it]"""
-        )
-        chat.with_model("anthropic", "claude-sonnet-4-5-20250929")
-        
-        # Build analysis prompt
-        prompt = f"""Analyze this spoken message transcript:
-
-"{transcript}"
-
-Provide exactly 2 neutral insights about what was noticed, and 1 alternative phrasing suggestion."""
-        
-        user_message = UserMessage(text=prompt)
-        response = await chat.send_message(user_message)
-        
-        # Parse response
-        lines = response.strip().split('\n')
-        insights = []
-        example_phrasing = ""
-        
-        for line in lines:
-            line = line.strip()
-            if line.startswith("INSIGHT_1:"):
-                insights.append(line.replace("INSIGHT_1:", "").strip())
-            elif line.startswith("INSIGHT_2:"):
-                insights.append(line.replace("INSIGHT_2:", "").strip())
-            elif line.startswith("PHRASING:"):
-                example_phrasing = line.replace("PHRASING:", "").strip()
-        
-        # Fallback if parsing fails
-        if len(insights) < 2:
-            insights = [
-                "Raised intensity detected",
-                "Fast pacing may escalate"
-            ]
-        
-        if not example_phrasing:
-            example_phrasing = "I'm getting heated. I need to pause before this goes any further."
-        
-        return TranscriptAnalysisResponse(
-            insights=insights[:2],  # Exactly 2
-            example_phrasing=example_phrasing,
-            transcript=transcript  # For debugging, not stored
-        )
-    
     except Exception as e:
-        logger.error(f"Error analyzing transcript: {str(e)}")
-        # Return safe defaults on error
-        return TranscriptAnalysisResponse(
-            insights=[
-                "Message analyzed",
-                "Consider tone and pacing"
-            ],
-            example_phrasing="I need a moment before I respond.",
-            transcript="Error during transcription"
-        )
+        print(f"Transcription error: {e}")
+        return None
 
 
-# Include the router in the main app
-app.include_router(api_router)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
-
-
-ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
-
-# MongoDB connection (not used for storage, but keeping for future features)
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
-
-# Create the main app without a prefix
-app = FastAPI()
-
-# Create a router with the /api prefix
-api_router = APIRouter(prefix="/api")
-
-# Get EMERGENT_LLM_KEY
-EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
-
-# Initialize OpenAI client for Whisper
-openai_client = openai.OpenAI(api_key=EMERGENT_LLM_KEY)
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-
-# Define Models
-class AudioAnalysisRequest(BaseModel):
+class AnalyzeAudioRequest(BaseModel):
     audio_base64: str
     duration_seconds: float
 
 
-class AudioAnalysisResponse(BaseModel):
+class AnalysisResults(BaseModel):
     raised_voice: bool
     fast_pacing: bool
     emotional_charge: bool
-    contains_profanity: bool
-    contains_labelling: bool
-    escalation_detected: bool
-    transcription: str
-    detected_language: str
-    insights: List[str]
-    severity_level: str  # "low", "medium", "high"
 
 
-class SuggestionRequest(BaseModel):
-    analysis_results: dict
+class GenerateSuggestionsRequest(BaseModel):
+    analysis_results: AnalysisResults
     message_type: str  # "outgoing" or "incoming"
 
 
-class SuggestionResponse(BaseModel):
-    suggestions: List[str]
+# Default fallback suggestions
+DEFAULT_SUGGESTIONS_OUTGOING = [
+    "I need some space right now. We can talk later.",
+    "I'm not continuing this while it's heated.",
+    "I want this to stay calm, so I'm stepping away."
+]
+
+DEFAULT_SUGGESTIONS_INCOMING = [
+    "I hear you. Let me take a moment before responding.",
+    "I understand this is important. Let's discuss when we're both calm.",
+    "Thank you for sharing. I need a moment to process this."
+]
 
 
-@api_router.get("/")
-async def root():
-    return {"message": "Anchor API - Voice De-escalation Tool"}
+@api.get("/")
+def root():
+    return {"message": "Anchor API"}
 
 
-def detect_profanity(text: str) -> bool:
-    """Detect profanity and aggressive language."""
-    profanity_patterns = [
-        r'\bf[*u]ck',
-        r'\bsh[*i]t',
-        r'\bd[*a]mn',
-        r'\bass',
-        r'\bbitch',
-        r'\bbastard',
-        r'\bcrap',
-        r'\bhell\b',
-        r'\bidiot',
-        r'\bstupid\b',
-        # Add more patterns as needed
-    ]
-    
-    text_lower = text.lower()
-    for pattern in profanity_patterns:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            return True
-    return False
+@api.get("/health")
+def health():
+    return {"ok": True}
 
 
-def detect_labelling(text: str) -> bool:
-    """Detect labelling language like 'you always', 'you never'."""
-    labelling_patterns = [
-        r'\byou\s+always\b',
-        r'\byou\s+never\b',
-        r'\byou\'re\s+so\b',
-        r'\byou\'re\s+such\b',
-        r'\bwhy\s+do\s+you\s+always\b',
-        r'\bwhy\s+do\s+you\s+never\b',
-        r'\beveryone\s+knows\b',
-        r'\banyone\s+can\s+see\b',
-    ]
-    
-    text_lower = text.lower()
-    for pattern in labelling_patterns:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            return True
-    return False
+@api.get("/status")
+def status():
+    """Check which features are available based on installed packages and API keys."""
+    return {
+        "librosa_available": LIBROSA_AVAILABLE,
+        "openai_available": OPENAI_AVAILABLE and bool(os.environ.get("OPENAI_API_KEY")),
+        "claude_available": CLAUDE_AVAILABLE and bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "features": {
+            "audio_analysis": LIBROSA_AVAILABLE,
+            "transcription": OPENAI_AVAILABLE and bool(os.environ.get("OPENAI_API_KEY")),
+            "ai_suggestions": CLAUDE_AVAILABLE and bool(os.environ.get("ANTHROPIC_API_KEY")),
+        }
+    }
 
 
-def detect_escalation(text: str) -> bool:
-    """Detect escalation markers and aggressive phrasing."""
-    escalation_patterns = [
-        r'\bshut\s+up\b',
-        r'\bleave\s+me\s+alone\b',
-        r'\bget\s+out\b',
-        r'\bgo\s+away\b',
-        r'\bi\s+hate\b',
-        r'\bcan\'t\s+stand\b',
-        r'\bsick\s+of\b',
-        r'\benough\b',
-        r'\bdone\s+with\b',
-        r'\bfed\s+up\b',
-        r'\bwhat\s+the\s+hell\b',
-        r'\bwhat\'s\s+wrong\s+with\s+you\b',
-    ]
-    
-    text_lower = text.lower()
-    for pattern in escalation_patterns:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            return True
-    return False
+class AnalyzeTextRequest(BaseModel):
+    text: str
 
 
-@api_router.post("/analyze-audio", response_model=AudioAnalysisResponse)
-async def analyze_audio(request: AudioAnalysisRequest):
+@api.post("/analyze-text")
+async def analyze_text(req: AnalyzeTextRequest) -> Dict[str, Any]:
     """
-    Analyze audio comprehensively:
-    1. Use Claude to analyze audio characteristics based on metadata
-    2. Analyze content patterns for profanity, labelling, escalation
-    3. Generate contextual insights
-    
-    Note: Full speech-to-text transcription requires OpenAI API key.
-    For MVP, we use audio metadata and Claude for analysis.
+    Analyze text for escalating language patterns.
+    Useful for testing word detection without audio.
     """
+    escalation_words = detect_escalation_words(req.text)
+
+    contains_profanity = "profanity" in escalation_words
+    contains_labelling = "labelling" in escalation_words
+    contains_blame = "blame_language" in escalation_words
+    contains_absolutes = "absolutes" in escalation_words
+    contains_threats = "threats" in escalation_words
+    contains_dismissive = "dismissive" in escalation_words
+
+    word_escalation = any([contains_profanity, contains_labelling, contains_blame, contains_threats])
+
+    insights: List[str] = []
+    if contains_profanity:
+        insights.append("Strong language detected")
+    if contains_blame:
+        insights.append("Blame language detected")
+    if contains_labelling:
+        insights.append("Name-calling detected")
+    if contains_threats:
+        insights.append("Threatening language detected")
+    if contains_absolutes and not contains_blame:
+        insights.append("Absolute statements detected")
+    if contains_dismissive:
+        insights.append("Dismissive language detected")
+
+    if not insights:
+        insights.append("Text appears neutral")
+
+    return {
+        "contains_profanity": contains_profanity,
+        "contains_labelling": contains_labelling,
+        "contains_blame": contains_blame,
+        "contains_absolutes": contains_absolutes,
+        "contains_threats": contains_threats,
+        "contains_dismissive": contains_dismissive,
+        "escalation_detected": word_escalation,
+        "escalation_words": escalation_words,
+        "insights": insights[:3],
+    }
+
+
+def analyze_audio_features(audio_data: bytes) -> Dict[str, Any]:
+    """
+    Analyze audio using librosa to extract voice features.
+    Returns volume level, tempo, pitch variation, and emotion indicators.
+    """
+    if not LIBROSA_AVAILABLE:
+        return None
+
     try:
-        # Decode base64 audio
-        audio_bytes = base64.b64decode(request.audio_base64)
-        
-        # Analyze audio properties
-        audio_size_kb = len(audio_bytes) / 1024
-        size_per_second = audio_size_kb / request.duration_seconds if request.duration_seconds > 0 else 0
-        
-        # Heuristic audio analysis
-        raised_voice = size_per_second > 30
-        
-        # Calculate words per minute estimate from duration
-        # Average speaking rate is 125-150 words/min, fast is 160+
-        estimated_words = max(10, int(request.duration_seconds * 2.5))  # Rough estimate
-        words_per_minute = (estimated_words / request.duration_seconds) * 60 if request.duration_seconds > 0 else 0
-        fast_pacing = words_per_minute > 180  # Very fast speech
-        
-        # Use Claude to analyze the audio characteristics
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id="anchor-audio-analysis",
-            system_message="You are an audio analysis expert. Based on audio metadata, provide insights about the message's emotional tone and conflict indicators."
-        )
-        chat.with_model("anthropic", "claude-sonnet-4-5-20250929")
-        
-        analysis_prompt = f"""Analyze this voice message metadata:
-- Duration: {request.duration_seconds} seconds
-- Audio size: {audio_size_kb:.1f} KB
-- Estimated speaking rate: {words_per_minute:.0f} words/minute
-- Volume indicators: {'High' if raised_voice else 'Normal'}
-- Pacing: {'Fast' if fast_pacing else 'Normal'}
+        # Load audio from bytes
+        audio_buffer = io.BytesIO(audio_data)
+        y, sr = librosa.load(audio_buffer, sr=None)
 
-Based on these characteristics, determine:
-1. Is there likely profanity or strong language? (yes/no)
-2. Are there likely labelling patterns like "you always/never"? (yes/no)
-3. Are there escalation indicators? (yes/no)
-4. What's a likely brief transcription of emotional tone? (one short sentence)
+        if len(y) == 0:
+            return None
 
-Respond in this exact format:
-PROFANITY: yes/no
-LABELLING: yes/no  
-ESCALATION: yes/no
-TONE: [one sentence describing likely emotional tone]"""
+        # 1. Volume analysis (RMS energy)
+        rms = librosa.feature.rms(y=y)[0]
+        mean_rms = float(np.mean(rms))
+        max_rms = float(np.max(rms))
+        rms_variance = float(np.var(rms))
 
-        user_message = UserMessage(text=analysis_prompt)
-        response = await chat.send_message(user_message)
-        
-        # Parse Claude's response
-        response_lower = response.lower()
-        contains_profanity = 'profanity: yes' in response_lower
-        contains_labelling = 'labelling: yes' in response_lower
-        escalation_detected = 'escalation: yes' in response_lower
-        
-        # Extract tone description
-        tone_line = [line for line in response.split('\n') if line.strip().startswith('TONE:')]
-        transcription = tone_line[0].split('TONE:', 1)[1].strip() if tone_line else "Message analyzed"
-        
-        # Determine severity
-        severity_score = 0
-        if raised_voice:
-            severity_score += 1
-        if contains_profanity:
-            severity_score += 2
-        if contains_labelling:
-            severity_score += 1
-        if escalation_detected:
-            severity_score += 2
-        
-        if severity_score >= 4:
-            severity_level = "high"
-        elif severity_score >= 2:
-            severity_level = "medium"
-        else:
-            severity_level = "low"
-        
-        emotional_charge = severity_score > 0
-        
-        # Generate insights (max 3)
-        insights = []
-        if escalation_detected:
-            insights.append("Escalation indicators detected")
-        if contains_profanity:
-            insights.append("Strong language likely present")
-        if contains_labelling:
-            insights.append("Labelling language patterns detected")
-        if raised_voice and not escalation_detected:
-            insights.append("Raised voice detected")
-        if fast_pacing and not escalation_detected:
-            insights.append("Fast pacing detected")
-        
-        # If no specific issues, provide positive feedback
-        if not insights:
-            insights.append("Message tone appears calm and constructive")
-        
-        return AudioAnalysisResponse(
-            raised_voice=raised_voice,
-            fast_pacing=fast_pacing,
-            emotional_charge=emotional_charge,
-            contains_profanity=contains_profanity,
-            contains_labelling=contains_labelling,
-            escalation_detected=escalation_detected,
-            transcription=transcription,
-            detected_language="en",  # Default for MVP
-            insights=insights[:3],
-            severity_level=severity_level
-        )
-    
+        # 2. Tempo/pacing analysis
+        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+        tempo = float(tempo) if not isinstance(tempo, np.ndarray) else float(tempo[0]) if len(tempo) > 0 else 0.0
+
+        # 3. Pitch analysis (using zero-crossing rate as proxy for pitch activity)
+        zcr = librosa.feature.zero_crossing_rate(y)[0]
+        mean_zcr = float(np.mean(zcr))
+        zcr_variance = float(np.var(zcr))
+
+        # 4. Spectral features for emotional intensity
+        spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
+        mean_spectral = float(np.mean(spectral_centroid))
+        spectral_variance = float(np.var(spectral_centroid))
+
+        # 5. MFCC for voice emotion characteristics
+        mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
+        mfcc_mean = np.mean(mfcc, axis=1)
+        mfcc_var = np.var(mfcc, axis=1)
+
+        # 6. Pitch (F0) estimation for emotion
+        pitches, magnitudes = librosa.piptrack(y=y, sr=sr)
+        pitch_values = []
+        for t in range(pitches.shape[1]):
+            index = magnitudes[:, t].argmax()
+            pitch = pitches[index, t]
+            if pitch > 0:
+                pitch_values.append(pitch)
+
+        mean_pitch = float(np.mean(pitch_values)) if pitch_values else 0.0
+        pitch_variance = float(np.var(pitch_values)) if pitch_values else 0.0
+        pitch_range = float(max(pitch_values) - min(pitch_values)) if len(pitch_values) > 1 else 0.0
+
+        # 7. Speech rate estimation (syllable-like events)
+        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+        onset_frames = librosa.onset.onset_detect(onset_envelope=onset_env, sr=sr)
+        duration = len(y) / sr
+        speech_rate = len(onset_frames) / duration if duration > 0 else 0.0
+
+        return {
+            "mean_rms": mean_rms,
+            "max_rms": max_rms,
+            "rms_variance": rms_variance,
+            "tempo": tempo,
+            "mean_zcr": mean_zcr,
+            "zcr_variance": zcr_variance,
+            "mean_spectral": mean_spectral,
+            "spectral_variance": spectral_variance,
+            "mean_pitch": mean_pitch,
+            "pitch_variance": pitch_variance,
+            "pitch_range": pitch_range,
+            "speech_rate": speech_rate,
+            "mfcc_energy": float(mfcc_mean[0]),  # First MFCC correlates with energy
+            "mfcc_variance": float(np.mean(mfcc_var)),
+        }
+
     except Exception as e:
-        logger.error(f"Error analyzing audio: {str(e)}")
-        # Return safe defaults on error
-        return AudioAnalysisResponse(
-            raised_voice=False,
-            fast_pacing=False,
-            emotional_charge=False,
-            contains_profanity=False,
-            contains_labelling=False,
-            escalation_detected=False,
-            transcription="Analysis in progress...",
-            detected_language="en",
-            insights=["Audio processed successfully"],
-            severity_level="low"
-        )
+        print(f"Audio analysis error: {e}")
+        return None
 
 
-@api_router.post("/generate-suggestions", response_model=SuggestionResponse)
-async def generate_suggestions(request: SuggestionRequest):
+def classify_emotion_from_audio(features: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Generate context-aware, nuanced suggestions using Claude.
-    Not always disengagement - depends on severity and content.
+    Classify emotional state from audio features.
+    Returns detected emotions and confidence levels.
     """
+    if not features:
+        return {"primary_emotion": "neutral", "confidence": 0.0, "emotions": {}}
+
+    emotions = {
+        "angry": 0.0,
+        "anxious": 0.0,
+        "stressed": 0.0,
+        "frustrated": 0.0,
+        "calm": 0.0,
+        "sad": 0.0,
+    }
+
+    # Anger indicators: high volume, high pitch variance, fast speech
+    if features["max_rms"] > 0.15:
+        emotions["angry"] += 0.3
+    if features["pitch_variance"] > 5000:
+        emotions["angry"] += 0.2
+    if features["speech_rate"] > 4.0:
+        emotions["angry"] += 0.2
+    if features["spectral_variance"] > 500000:
+        emotions["angry"] += 0.1
+
+    # Anxiety indicators: high pitch, fast speech, high variance
+    if features["mean_pitch"] > 200:
+        emotions["anxious"] += 0.3
+    if features["speech_rate"] > 3.5:
+        emotions["anxious"] += 0.2
+    if features["rms_variance"] > 0.002:
+        emotions["anxious"] += 0.2
+
+    # Stress indicators: high energy variance, irregular tempo
+    if features["rms_variance"] > 0.003:
+        emotions["stressed"] += 0.3
+    if features["zcr_variance"] > 0.01:
+        emotions["stressed"] += 0.2
+    if features["mfcc_variance"] > 50:
+        emotions["stressed"] += 0.2
+
+    # Frustration: moderate volume increase, pitch instability
+    if 0.08 < features["mean_rms"] < 0.15:
+        emotions["frustrated"] += 0.3
+    if features["pitch_range"] > 100:
+        emotions["frustrated"] += 0.2
+
+    # Sadness: low energy, slow speech, lower pitch
+    if features["mean_rms"] < 0.03:
+        emotions["sad"] += 0.3
+    if features["speech_rate"] < 2.0:
+        emotions["sad"] += 0.2
+    if features["mean_pitch"] < 150:
+        emotions["sad"] += 0.2
+
+    # Calm: low variance, moderate values
+    if features["rms_variance"] < 0.001:
+        emotions["calm"] += 0.3
+    if features["pitch_variance"] < 2000:
+        emotions["calm"] += 0.2
+    if features["spectral_variance"] < 200000:
+        emotions["calm"] += 0.2
+
+    # Normalize and find primary emotion
+    total = sum(emotions.values())
+    if total > 0:
+        emotions = {k: round(v / total, 2) for k, v in emotions.items()}
+
+    primary_emotion = max(emotions, key=emotions.get)
+    confidence = emotions[primary_emotion]
+
+    return {
+        "primary_emotion": primary_emotion,
+        "confidence": confidence,
+        "emotions": emotions,
+    }
+
+
+@api.post("/analyze-audio")
+async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
+    """
+    Analyze audio for volume, pacing, emotional indicators, and escalating language.
+    Returns comprehensive analysis including emotion detection and word analysis.
+    """
+    # Validate base64
     try:
-        # Initialize Claude chat
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id="anchor-suggestions",
-            system_message="""You are a conflict de-escalation expert who provides nuanced, context-aware communication suggestions.
+        audio_data = base64.b64decode(req.audio_base64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 audio data")
 
-Key principles:
-- Don't always suggest disengagement - some situations benefit from calm engagement
-- Match response to severity: low severity = calm engagement, high severity = boundaries
-- Fast pacing alone doesn't mean conflict - some people naturally speak quickly
-- Focus on what was SAID, not just how it was said
-- Suggestions should be authentic and varied, not formulaic"""
-        )
-        chat.with_model("anthropic", "claude-sonnet-4-5-20250929")
-        
-        # Build rich context
-        analysis = request.analysis_results
-        severity = analysis.get('severity_level', 'medium')
-        transcription = analysis.get('transcription', '')
-        language = analysis.get('detected_language', 'en')
-        
-        context_parts = [f"Message type: {request.message_type}"]
-        context_parts.append(f"Severity level: {severity}")
-        context_parts.append(f"Language detected: {language}")
-        
-        if transcription:
-            context_parts.append(f"What was said: \"{transcription}\"")
-        
-        if analysis.get('escalation_detected'):
-            context_parts.append("- Escalation language detected (e.g., 'shut up', 'enough', etc.)")
-        if analysis.get('contains_profanity'):
-            context_parts.append("- Strong language/profanity present")
-        if analysis.get('contains_labelling'):
-            context_parts.append("- Labelling language used (e.g., 'you always', 'you never')")
-        if analysis.get('raised_voice'):
-            context_parts.append("- Raised voice detected")
-        if analysis.get('fast_pacing') and not analysis.get('escalation_detected'):
-            context_parts.append("- Fast pacing (but this alone isn't necessarily conflict)")
-        
-        context = "\n".join(context_parts)
-        
-        # Generate appropriate prompt based on severity
-        if request.message_type == "outgoing":
-            if severity == "high":
-                prompt = f"""{context}
+    if not audio_data:
+        raise HTTPException(status_code=400, detail="Empty audio data")
 
-This is high-conflict content. Generate exactly 3 short phrases that:
-1. Set firm boundaries
-2. Prioritize safety and de-escalation
-3. Avoid engaging with the content
-Each phrase should be 1 sentence. Format as numbered list."""
-            elif severity == "medium":
-                prompt = f"""{context}
+    # Try real audio analysis with librosa
+    features = analyze_audio_features(audio_data)
 
-This shows some conflict markers. Generate exactly 3 short phrases that:
-1. Acknowledge tension without escalating
-2. Offer space or a pause
-3. Keep the door open for calmer conversation
-Each phrase should be 1 sentence. Format as numbered list."""
-            else:  # low
-                prompt = f"""{context}
+    # Transcribe audio for word analysis
+    transcription = await transcribe_audio(audio_data)
+    escalation_words = detect_escalation_words(transcription) if transcription else {}
 
-This seems relatively calm. Generate exactly 3 short phrases that:
-1. Continue the conversation constructively
-2. Express needs clearly and calmly
-3. Show openness to dialogue
-Each phrase should be 1 sentence. Format as numbered list."""
-        else:  # incoming
-            if severity == "high":
-                prompt = f"""{context}
+    # Detect escalating language from transcription
+    contains_profanity = "profanity" in escalation_words
+    contains_labelling = "labelling" in escalation_words
+    contains_blame = "blame_language" in escalation_words
+    contains_absolutes = "absolutes" in escalation_words
+    contains_threats = "threats" in escalation_words
+    contains_dismissive = "dismissive" in escalation_words
 
-Someone sent you a high-conflict message. Generate exactly 3 short response approaches that:
-1. Protect your emotional wellbeing
-2. Don't match the energy or engage with attacks
-3. Set boundaries calmly
-Each should be 1 sentence. Format as numbered list."""
-            elif severity == "medium":
-                prompt = f"""{context}
+    if features:
+        # Thresholds calibrated for voice messages
+        raised_voice = features["max_rms"] > 0.15 or features["mean_rms"] > 0.08
+        fast_pacing = features["tempo"] > 160 or features.get("speech_rate", 0) > 4.0
 
-Someone sent you a somewhat heated message. Generate exactly 3 short response approaches that:
-1. Acknowledge their feelings without agreeing with attacks
-2. Suggest a pause or calmer discussion
-3. Keep your composure
-Each should be 1 sentence. Format as numbered list."""
-            else:  # low
-                prompt = f"""{context}
-
-Someone sent you a message that seems relatively calm. Generate exactly 3 short response approaches that:
-1. Respond constructively to what they said
-2. Keep communication open
-3. Address their concerns thoughtfully
-Each should be 1 sentence. Format as numbered list."""
-        
-        # Get suggestions from Claude
-        user_message = UserMessage(text=prompt)
-        response = await chat.send_message(user_message)
-        
-        # Parse response into list
-        lines = response.strip().split('\n')
-        suggestions = []
-        for line in lines:
-            cleaned = line.strip()
-            if cleaned and len(cleaned) > 5:
-                # Remove leading numbers and dots
-                if cleaned[0].isdigit():
-                    cleaned = cleaned.split('.', 1)[-1].strip()
-                if cleaned and cleaned not in suggestions:  # Avoid duplicates
-                    suggestions.append(cleaned)
-        
-        # Fallback suggestions based on severity
-        if severity == "high":
-            default_suggestions = [
-                "I need to step away from this conversation right now.",
-                "I'm not going to continue while things are this heated.",
-                "Let's talk about this when we're both calmer."
-            ]
-        elif severity == "medium":
-            default_suggestions = [
-                "I hear that you're upset. Can we take a break and talk later?",
-                "I want to understand you, but I need us both to stay calm.",
-                "Let's pause here and come back to this when tensions are lower."
-            ]
-        else:
-            default_suggestions = [
-                "I appreciate you sharing that with me.",
-                "Let's work through this together calmly.",
-                "I understand where you're coming from."
-            ]
-        
-        # Ensure we have at least 3 suggestions
-        while len(suggestions) < 3:
-            suggestions.append(default_suggestions[len(suggestions) % 3])
-        
-        return SuggestionResponse(
-            suggestions=suggestions[:3]
-        )
-    
-    except Exception as e:
-        logger.error(f"Error generating suggestions: {str(e)}")
-        # Return context-appropriate defaults
-        return SuggestionResponse(
-            suggestions=[
-                "I need some space right now. We can talk later.",
-                "I want to understand you, but let's both stay calm.",
-                "Let's take a break and come back to this."
-            ]
+        # Emotional charge from audio features
+        emotional_charge = (
+            features["rms_variance"] > 0.002 or
+            features["spectral_variance"] > 500000 or
+            (raised_voice and features["zcr_variance"] > 0.01)
         )
 
+        # Get emotion classification
+        emotion_result = classify_emotion_from_audio(features)
+    else:
+        # Fallback heuristics if librosa unavailable
+        duration = req.duration_seconds
+        audio_size = len(audio_data)
+        bytes_per_second = audio_size / max(duration, 0.1)
 
-# Include the router in the main app
-app.include_router(api_router)
+        raised_voice = bytes_per_second > 15000
+        fast_pacing = bytes_per_second > 10000
+        emotional_charge = raised_voice
+        emotion_result = {"primary_emotion": "unknown", "confidence": 0.0, "emotions": {}}
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    # Escalation detection combines voice tone AND word content
+    voice_escalation = raised_voice and (fast_pacing or emotional_charge)
+    word_escalation = any([contains_profanity, contains_labelling, contains_blame, contains_threats])
+    escalation_detected = voice_escalation or word_escalation
+
+    # Calculate severity level
+    signal_count = sum([
+        raised_voice,
+        fast_pacing,
+        emotional_charge,
+        contains_profanity,
+        contains_labelling,
+        contains_blame,
+        contains_threats,
+    ])
+
+    if signal_count == 0:
+        severity_level = "low"
+    elif signal_count <= 2:
+        severity_level = "medium"
+    else:
+        severity_level = "high"
+
+    # Generate insights (max 3)
+    insights: List[str] = []
+
+    # Voice-based insights
+    if raised_voice:
+        insights.append("Raised voice detected")
+    if fast_pacing:
+        insights.append("Fast pacing detected")
+    if emotion_result["primary_emotion"] in ["angry", "frustrated"] and emotion_result["confidence"] > 0.3:
+        insights.append(f"{emotion_result['primary_emotion'].capitalize()} tone detected")
+    elif emotion_result["primary_emotion"] == "anxious" and emotion_result["confidence"] > 0.3:
+        insights.append("Anxious tone detected")
+
+    # Word-based insights
+    if contains_profanity:
+        insights.append("Strong language detected")
+    if contains_blame:
+        insights.append("Blame language detected (e.g., 'you always...')")
+    if contains_labelling:
+        insights.append("Name-calling detected")
+    if contains_threats:
+        insights.append("Threatening language detected")
+    if contains_absolutes and not contains_blame:
+        insights.append("Absolute statements detected (always/never)")
+    if contains_dismissive:
+        insights.append("Dismissive language detected")
+
+    # Escalation pattern insight
+    if escalation_detected and len(insights) < 3:
+        insights.append("Escalation pattern detected")
+
+    # Default for calm messages
+    if not insights:
+        insights.append("Message tone appears calm")
+
+    # Ensure max 3 insights
+    insights = insights[:3]
+
+    return {
+        "raised_voice": raised_voice,
+        "fast_pacing": fast_pacing,
+        "emotional_charge": emotional_charge,
+        "contains_profanity": contains_profanity,
+        "contains_labelling": contains_labelling,
+        "contains_blame": contains_blame,
+        "contains_absolutes": contains_absolutes,
+        "contains_threats": contains_threats,
+        "contains_dismissive": contains_dismissive,
+        "escalation_detected": escalation_detected,
+        "escalation_words": escalation_words,
+        "emotion": emotion_result,
+        "insights": insights,
+        "severity_level": severity_level,
+        # Note: transcription is processed but not returned to client for privacy
+        # Only the analysis results are returned
+    }
 
 
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
+@api.post("/generate-suggestions")
+async def generate_suggestions(req: GenerateSuggestionsRequest) -> Dict[str, Any]:
+    """
+    Generate 3 de-escalation suggestions using Claude AI.
+    Falls back to default suggestions if Claude is unavailable.
+    """
+    analysis = req.analysis_results
+    message_type = req.message_type.lower()
+
+    # Determine context for AI prompt
+    signals = []
+    if analysis.raised_voice:
+        signals.append("raised voice")
+    if analysis.fast_pacing:
+        signals.append("fast pacing")
+    if analysis.emotional_charge:
+        signals.append("emotional charge")
+
+    is_heated = any([analysis.raised_voice, analysis.fast_pacing, analysis.emotional_charge])
+
+    # Try Claude API if available
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if CLAUDE_AVAILABLE and api_key:
+        try:
+            if message_type == "outgoing":
+                prompt = f"""You are helping someone de-escalate a conflict. They are about to send a voice message.
+Analysis shows: {', '.join(signals) if signals else 'calm tone'}.
+{'The message seems heated.' if is_heated else 'The message seems calm.'}
+
+Generate exactly 3 short, calm, neutral phrases they could say instead to de-escalate.
+Each phrase should be 1-2 sentences max. Focus on self-regulation, not blaming others.
+Return only the 3 phrases, one per line, no numbering or bullets."""
+            else:  # incoming
+                prompt = f"""You are helping someone respond calmly to a voice message they received.
+Analysis of the received message shows: {', '.join(signals) if signals else 'calm tone'}.
+{'The message seems heated.' if is_heated else 'The message seems calm.'}
+
+Generate exactly 3 short, calm, neutral response phrases they could use.
+Each phrase should be 1-2 sentences max. Focus on staying calm and not escalating.
+Return only the 3 phrases, one per line, no numbering or bullets."""
+
+            client = anthropic.Anthropic(api_key=api_key)
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=256,
+                messages=[{"role": "user", "content": prompt}]
+            )
+
+            # Parse response into suggestions
+            response_text = response.content[0].text
+            lines = [line.strip() for line in response_text.strip().split('\n') if line.strip()]
+            suggestions = lines[:3]
+
+            # Ensure we have exactly 3 suggestions
+            if len(suggestions) == 3:
+                return {"suggestions": suggestions}
+
+        except Exception as e:
+            # Log error but fall through to defaults
+            print(f"Claude API error: {e}")
+
+    # Fallback to default suggestions
+    if message_type == "outgoing":
+        return {"suggestions": DEFAULT_SUGGESTIONS_OUTGOING}
+    else:
+        return {"suggestions": DEFAULT_SUGGESTIONS_INCOMING}
+
+
+app.include_router(api)
