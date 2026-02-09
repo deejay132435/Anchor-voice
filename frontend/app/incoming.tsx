@@ -13,6 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import { analyzeAudio, generateSuggestions } from '../services/apiService';
 
 export default function IncomingScreen() {
   const router = useRouter();
@@ -63,22 +65,27 @@ export default function IncomingScreen() {
   const analyzeIncomingAudio = async (uri: string) => {
     setIsAnalyzing(true);
     setHasAnalyzed(false);
-    
+
     try {
-      // Show "Analyzing..." for 800ms
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      // Mock analysis - Phase 2 MVP
-      // Future: call actual backend API
-      const mockInsights = [
-        "Raised intensity detected",
-        "Fast pacing may escalate"
-      ];
-      
-      const mockPhrasing = "I hear you. I need time to think about this before I respond.";
-      
-      setInsights(mockInsights);
-      setExamplePhrasing(mockPhrasing);
+      // Read audio file as base64
+      const base64Audio = await FileSystem.readAsStringAsync(uri, {
+        encoding: 'base64',
+      });
+
+      // Call analyze-audio endpoint
+      const analysis = await analyzeAudio(base64Audio, 1);
+      setInsights(analysis.insights);
+
+      // Call generate-suggestions endpoint for a response phrase
+      const suggestionsResult = await generateSuggestions(
+        {
+          raised_voice: analysis.raised_voice,
+          fast_pacing: analysis.fast_pacing,
+          emotional_charge: analysis.emotional_charge,
+        },
+        'incoming'
+      );
+      setExamplePhrasing(suggestionsResult.suggestions[0] || "I hear you. Let me take a moment before responding.");
       setHasAnalyzed(true);
     } catch (error) {
       console.error('Error analyzing audio:', error);
@@ -145,7 +152,7 @@ export default function IncomingScreen() {
         {/* Instructions */}
         {!audioUri && (
           <View style={styles.instructionsSection}>
-            <Text style={styles.groundingText}>You're in control.</Text>
+            <Text style={styles.groundingText}>You{"'"}re in control.</Text>
             <Text style={styles.instructionText}>
               Select a voice message to prepare yourself before listening.
             </Text>

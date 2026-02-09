@@ -24,7 +24,6 @@ export default function OutgoingScreen() {
   const [recordedUri, setRecordedUri] = useState<string | null>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<AudioAnalysisResponse | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -131,51 +130,34 @@ export default function OutgoingScreen() {
       setRecordedUri(uri);
       setRecording(null);
 
-      // CRITICAL: Automatically trigger transcript-based analysis
+      // Automatically trigger audio analysis + suggestions
       if (uri) {
-        // Show analyzing state
         setIsLoadingSuggestions(true);
-        
+
         try {
           // Read audio file and convert to base64
           const base64Audio = await FileSystem.readAsStringAsync(uri, {
             encoding: 'base64',
           });
-          
-          // Call new transcript analysis endpoint
-          const response = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL || ''}/api/analyze-transcript`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
+
+          // Call analyze-audio endpoint
+          const analysis = await analyzeAudio(base64Audio, recordingDuration || 1);
+          setAnalysisResults(analysis);
+
+          // Call generate-suggestions endpoint
+          const suggestionsResult = await generateSuggestions(
+            {
+              raised_voice: analysis.raised_voice,
+              fast_pacing: analysis.fast_pacing,
+              emotional_charge: analysis.emotional_charge,
             },
-            body: JSON.stringify({
-              audio_base64: base64Audio,
-              duration_seconds: recordingDuration || 1,
-            }),
-          });
-          
-          if (!response.ok) {
-            throw new Error('Failed to analyze transcript');
-          }
-          
-          const data = await response.json();
-          console.log('[Transcript Analysis]', data);
-          
-          // Set dynamic insights and phrasing
-          const mockAnalysis = {
-            raised_voice: false,
-            fast_pacing: false,
-            emotional_charge: false,
-            insights: data.insights || ["Message analyzed", "Consider tone"],
-          };
-          
-          setAnalysisResults(mockAnalysis as any);
-          setSuggestions([data.example_phrasing || "I need a moment before I respond."]);
+            'outgoing'
+          );
+          setSuggestions(suggestionsResult.suggestions);
           setShowSuggestions(true);
-          
+
         } catch (error) {
-          console.error('Error analyzing transcript:', error);
-          // Fallback to defaults
+          console.error('Error analyzing audio:', error);
           setSuggestions(["I'm getting heated. I need to pause before this goes any further."]);
           setShowSuggestions(true);
         } finally {
@@ -189,28 +171,6 @@ export default function OutgoingScreen() {
     }
   };
 
-  const analyzeRecording = async (uri: string) => {
-    setIsAnalyzing(true);
-    try {
-      // Read audio file and convert to base64
-      const base64Audio = await FileSystem.readAsStringAsync(uri, {
-        encoding: 'base64',
-      });
-
-      // Get file info for duration
-      const fileInfo = await FileSystem.getInfoAsync(uri);
-      const durationSeconds = recordingDuration || 1; // Use recorded duration or default to 1
-
-      // Call analysis API
-      const results = await analyzeAudio(base64Audio, durationSeconds);
-      setAnalysisResults(results);
-    } catch (error) {
-      console.error('Error analyzing audio:', error);
-      Alert.alert('Error', 'Failed to analyze audio. You can still send the message.');
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
 
   const playRecording = async () => {
     if (!recordedUri) return;
@@ -243,24 +203,6 @@ export default function OutgoingScreen() {
     }
   };
 
-  const loadSuggestions = async () => {
-    if (!analysisResults) return;
-
-    setIsLoadingSuggestions(true);
-    setShowSuggestions(false);
-    
-    // Mock loading delay (~800ms)
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    // Mock suggestions - single focused example phrase
-    const mockSuggestions = [
-      "I'm getting heated. I need to pause before this goes any further."
-    ];
-    
-    setSuggestions(mockSuggestions);
-    setShowSuggestions(true);
-    setIsLoadingSuggestions(false);
-  };
 
   const shareRecording = async () => {
     if (!recordedUri) return;
@@ -370,14 +312,7 @@ export default function OutgoingScreen() {
         )}
 
         {/* Analysis Results */}
-        {isAnalyzing && (
-          <View style={styles.analysisSection}>
-            <ActivityIndicator size="large" color="#4a90e2" />
-            <Text style={styles.analyzingText}>Analyzing message...</Text>
-          </View>
-        )}
-
-        {analysisResults && !isAnalyzing && (
+        {analysisResults && (
           <View style={styles.insightsSection}>
             <View style={styles.insightsHeader}>
               <Text style={styles.insightsTitle}>Insights</Text>

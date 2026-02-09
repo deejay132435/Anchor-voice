@@ -1,7 +1,10 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "updates": {
+      "enabled": false
+    },
+    "name": "Anchor Voice",
+    "slug": "anchor-voice",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -58,6 +61,15 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "apiUrl": "https://crispy-halibut-x56vgrrvrxwg3jv9-8001.app.github.dev",
+      "router": {},
+      "eas": {
+        "projectId": "d6e86a9a-ab9f-41af-8030-c5c5a2e9d751"
+      }
+    },
+    "owner": "deejayjustin"
   }
 }
+

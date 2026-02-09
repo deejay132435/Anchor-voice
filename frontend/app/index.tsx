@@ -34,7 +34,7 @@ export default function HomeScreen() {
           </View>
           <Text style={styles.title}>Anchor</Text>
           <Text style={styles.subtitle}>
-            Stay steady.{'\n'}You're in control.
+            Stay steady.{'\n'}You{"'"}re in control.
           </Text>
         </View>
 
