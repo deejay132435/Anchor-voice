@@ -19,12 +19,16 @@ load_dotenv(ROOT_DIR / '.env')
 app = FastAPI(title="Anchor API", description="Voice de-escalation analysis API")
 
 # Add CORS middleware for frontend
+# Configure CORS based on environment
+allowed_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "*").split(",")
+allow_all = "*" in allowed_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins if not allow_all else ["*"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 api = APIRouter(prefix="/api")
@@ -36,6 +40,13 @@ try:
     LIBROSA_AVAILABLE = True
 except ImportError:
     LIBROSA_AVAILABLE = False
+
+# Try to import pydub for audio format conversion (m4a/aac -> wav)
+try:
+    from pydub import AudioSegment
+    PYDUB_AVAILABLE = True
+except ImportError:
+    PYDUB_AVAILABLE = False
 
 # Try to import OpenAI for Whisper transcription
 try:
@@ -115,9 +126,12 @@ async def transcribe_audio(audio_data: bytes) -> Optional[str]:
     try:
         client = openai.OpenAI(api_key=api_key)
 
+        # Convert to WAV for Whisper API compatibility
+        wav_data = convert_audio_to_wav(audio_data)
+
         # Write audio to temp file (Whisper API needs a file)
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-            f.write(audio_data)
+            f.write(wav_data)
             temp_path = f.name
 
         try:
@@ -130,8 +144,14 @@ async def transcribe_audio(audio_data: bytes) -> Optional[str]:
             return response.strip() if response else None
         finally:
             # Clean up temp file
-            os.unlink(temp_path)
+            try:
+                os.unlink(temp_path)
+            except Exception as cleanup_err:
+                print(f"Failed to clean up temp file: {cleanup_err}")
 
+    except openai.APIError as e:
+        print(f"OpenAI API error: {e}")
+        return None
     except Exception as e:
         print(f"Transcription error: {e}")
         return None
@@ -243,6 +263,26 @@ async def analyze_text(req: AnalyzeTextRequest) -> Dict[str, Any]:
     }
 
 
+def convert_audio_to_wav(audio_data: bytes) -> bytes:
+    """
+    Convert any audio format (m4a, aac, ogg, etc.) to WAV using pydub+ffmpeg.
+    Mobile devices record in m4a/aac which librosa/soundfile can't read directly.
+    """
+    if not PYDUB_AVAILABLE:
+        print("Warning: pydub not available, returning raw audio. Audio conversion may fail.")
+        return audio_data
+
+    try:
+        audio_segment = AudioSegment.from_file(io.BytesIO(audio_data))
+        wav_buffer = io.BytesIO()
+        audio_segment.export(wav_buffer, format="wav")
+        wav_buffer.seek(0)
+        return wav_buffer.read()
+    except Exception as e:
+        print(f"Audio conversion error: {e}. Returning raw audio data.")
+        return audio_data
+
+
 def analyze_audio_features(audio_data: bytes) -> Dict[str, Any]:
     """
     Analyze audio using librosa to extract voice features.
@@ -252,8 +292,11 @@ def analyze_audio_features(audio_data: bytes) -> Dict[str, Any]:
         return None
 
     try:
+        # Convert to WAV first (handles m4a/aac from mobile devices)
+        wav_data = convert_audio_to_wav(audio_data)
+
         # Load audio from bytes
-        audio_buffer = io.BytesIO(audio_data)
+        audio_buffer = io.BytesIO(wav_data)
         y, sr = librosa.load(audio_buffer, sr=None)
 
         if len(y) == 0:
@@ -435,16 +478,16 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
     contains_threats = "threats" in escalation_words
     contains_dismissive = "dismissive" in escalation_words
 
-    if features:
+    if features and isinstance(features, dict):
         # Thresholds calibrated for voice messages
-        raised_voice = features["max_rms"] > 0.15 or features["mean_rms"] > 0.08
-        fast_pacing = features["tempo"] > 160 or features.get("speech_rate", 0) > 4.0
+        raised_voice = features.get("max_rms", 0) > 0.15 or features.get("mean_rms", 0) > 0.08
+        fast_pacing = features.get("tempo", 0) > 160 or features.get("speech_rate", 0) > 4.0
 
         # Emotional charge from audio features
         emotional_charge = (
-            features["rms_variance"] > 0.002 or
-            features["spectral_variance"] > 500000 or
-            (raised_voice and features["zcr_variance"] > 0.01)
+            features.get("rms_variance", 0) > 0.002 or
+            features.get("spectral_variance", 0) > 500000 or
+            (raised_voice and features.get("zcr_variance", 0) > 0.01)
         )
 
         # Get emotion classification
@@ -594,8 +637,8 @@ Return only the 3 phrases, one per line, no numbering or bullets."""
             lines = [line.strip() for line in response_text.strip().split('\n') if line.strip()]
             suggestions = lines[:3]
 
-            # Ensure we have exactly 3 suggestions
-            if len(suggestions) == 3:
+            # Ensure we have exactly 3 suggestions, fall back to defaults if not
+            if len(suggestions) >= 3:
                 return {"suggestions": suggestions}
 
         except Exception as e:

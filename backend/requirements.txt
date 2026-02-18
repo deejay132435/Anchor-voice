@@ -7,5 +7,6 @@ anthropic>=0.18.0
 python-dotenv>=1.0.1
 pydantic>=2.6.4
 numpy>=1.26.0
+pydub>=0.25.1
 requests>=2.31.0
 python-multipart>=0.0.9
