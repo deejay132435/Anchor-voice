@@ -21,7 +21,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000"
+        "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
       "permissions": [
@@ -38,13 +38,36 @@
               "mimeType": "audio/*"
             }
           ]
+        },
+        {
+          "action": "android.intent.action.SEND_MULTIPLE",
+          "category": [
+            "android.intent.category.DEFAULT"
+          ],
+          "data": [
+            {
+              "mimeType": "audio/*"
+            }
+          ]
+        },
+        {
+          "action": "android.intent.action.VIEW",
+          "category": [
+            "android.intent.category.DEFAULT",
+            "android.intent.category.BROWSABLE"
+          ],
+          "data": [
+            {
+              "mimeType": "audio/*"
+            }
+          ]
         }
       ],
       "package": "com.anchor.voice"
     },
     "web": {
       "bundler": "metro",
-      "output": "server",
+      "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
@@ -55,15 +78,17 @@
           "image": "./assets/images/splash-image.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000"
+          "backgroundColor": "#000000"
         }
-      ]
+      ],
+      "expo-font",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
     },
     "extra": {
-      "apiUrl": "https://crispy-halibut-x56vgrrvrxwg3jv9-8001.app.github.dev",
+      "apiUrl": "https://anchor-voice-production.up.railway.app",
       "router": {},
       "eas": {
         "projectId": "d6e86a9a-ab9f-41af-8030-c5c5a2e9d751"
@@ -72,4 +97,3 @@
     "owner": "deejayjustin"
   }
 }
-
