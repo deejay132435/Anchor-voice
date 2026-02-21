@@ -405,17 +405,18 @@ export default function OutgoingScreen() {
                   </View>
                 )}
 
-                {/* Flagged phrases */}
+                {/* Detection categories with counts — no actual words shown */}
                 {analysisResults.escalation_words && Object.keys(analysisResults.escalation_words).length > 0 && (
                   <View style={styles.flaggedSection}>
-                    <Text style={styles.detectionLabel}>Flagged phrases:</Text>
-                    {Object.entries(analysisResults.escalation_words).map(([category, words]) => (
-                      <View key={category} style={styles.flaggedRow}>
+                    <Text style={styles.detectionLabel}>Detected:</Text>
+                    {Object.entries(analysisResults.escalation_words).map(([label, count]) => (
+                      <View key={label} style={styles.flaggedRow}>
+                        <View style={styles.flaggedBullet} />
                         <Text style={styles.flaggedCategory}>
-                          {category.replace('_', ' ')}:
+                          {label}
                         </Text>
                         <Text style={styles.flaggedWords}>
-                          {(words as string[]).map(w => `"${w}"`).join(', ')}
+                          ({count as number} {(count as number) === 1 ? 'instance' : 'instances'})
                         </Text>
                       </View>
                     ))}
@@ -846,20 +847,23 @@ const styles = StyleSheet.create({
   },
   flaggedRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 4,
+    gap: 8,
+    marginTop: 6,
+  },
+  flaggedBullet: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#e74c3c',
   },
   flaggedCategory: {
-    fontSize: 11,
-    color: '#a0a0b0',
+    fontSize: 13,
+    color: '#e0e0e0',
     fontWeight: '500',
-    textTransform: 'capitalize',
   },
   flaggedWords: {
     fontSize: 12,
-    color: '#e74c3c',
-    fontStyle: 'italic',
+    color: '#a0a0b0',
   },
 });

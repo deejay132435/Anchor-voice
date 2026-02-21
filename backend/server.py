@@ -513,9 +513,24 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
         emotional_charge = raised_voice
         emotion_result = {"primary_emotion": "unknown", "confidence": 0.0, "emotions": {}}
 
+    # If voice sounds calm but words are aggressive, adjust the tone
+    # Saying profanity/threats calmly is still escalating — don't label it "calm"
+    word_escalation = any([contains_profanity, contains_labelling, contains_blame, contains_threats])
+    if word_escalation and emotion_result.get("primary_emotion") == "calm":
+        if contains_threats or contains_labelling:
+            emotion_result["primary_emotion"] = "aggressive"
+            emotion_result["confidence"] = 0.5
+        elif contains_profanity:
+            emotion_result["primary_emotion"] = "frustrated"
+            emotion_result["confidence"] = 0.4
+        elif contains_blame:
+            emotion_result["primary_emotion"] = "frustrated"
+            emotion_result["confidence"] = 0.3
+        # Also flag emotional charge since the words carry emotion even if voice doesn't
+        emotional_charge = True
+
     # Escalation detection combines voice tone AND word content
     voice_escalation = raised_voice and (fast_pacing or emotional_charge)
-    word_escalation = any([contains_profanity, contains_labelling, contains_blame, contains_threats])
     escalation_detected = voice_escalation or word_escalation
 
     # Calculate severity level
@@ -574,6 +589,22 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
     # Ensure max 3 insights
     insights = insights[:3]
 
+    # Build safe detection summary — categories and counts only, never the actual words
+    # This avoids displaying profanity/slurs in the app (legal + UX safety)
+    category_labels = {
+        "profanity": "Strong language",
+        "absolutes": "Absolute statements",
+        "blame_language": "Blame language",
+        "labelling": "Name-calling",
+        "threats": "Threatening language",
+        "dismissive": "Dismissive language",
+        "interrupting": "Interrupting language",
+    }
+    detection_summary = {}
+    for category, words in escalation_words.items():
+        label = category_labels.get(category, category.replace("_", " ").title())
+        detection_summary[label] = len(words) if isinstance(words, list) else 1
+
     return {
         "raised_voice": raised_voice,
         "fast_pacing": fast_pacing,
@@ -585,7 +616,7 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
         "contains_threats": contains_threats,
         "contains_dismissive": contains_dismissive,
         "escalation_detected": escalation_detected,
-        "escalation_words": escalation_words,
+        "escalation_words": detection_summary,
         "emotion": emotion_result,
         "insights": insights,
         "severity_level": severity_level,
