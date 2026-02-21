@@ -66,7 +66,16 @@ except ImportError:
 # Escalation patterns - words/phrases that tend to escalate conflicts
 ESCALATION_PATTERNS = {
     "profanity": [
-        r"\b(fuck|shit|damn|hell|ass|bitch|bastard|crap)\b",
+        # Full words
+        r"\b(fuck|shit|damn|hell|ass|bitch|bastard|crap)\w*\b",
+        # Censored versions Whisper often returns: f***, s***, f-word, etc.
+        r"\b[fF]\*+\w*",
+        r"\b[sS]\*+\w*",
+        r"\b[bB]\*+\w*",
+        r"\bf[\-\*]+(ing|ed|er|ck)?\b",
+        r"\bs[\-\*]+(ing|ed|er|t)?\b",
+        # Common Whisper euphemisms
+        r"\b(f-word|s-word|freaking|effing|frickin|freakin)\b",
     ],
     "absolutes": [
         r"\b(always|never|every\s*time|constantly)\b",
