@@ -140,17 +140,26 @@ export default function OutgoingScreen() {
             encoding: 'base64',
           });
 
-          // Call analyze-audio endpoint
-          const analysis = await analyzeAudio(base64Audio, recordingDuration || 1);
+          // Get actual audio duration from file
+          let actualDuration = recordingDuration || 1;
+          try {
+            const { sound: tempSound } = await Audio.Sound.createAsync({ uri });
+            const status = await tempSound.getStatusAsync();
+            if (status.isLoaded && status.durationMillis) {
+              actualDuration = Math.max(1, Math.round(status.durationMillis / 1000));
+            }
+            await tempSound.unloadAsync();
+          } catch (e) {
+            console.warn('Could not get exact duration, using recorded duration:', e);
+          }
+
+          // Call analyze-audio endpoint with accurate duration
+          const analysis = await analyzeAudio(base64Audio, actualDuration);
           setAnalysisResults(analysis);
 
           // Call generate-suggestions endpoint
           const suggestionsResult = await generateSuggestions(
-            {
-              raised_voice: analysis.raised_voice,
-              fast_pacing: analysis.fast_pacing,
-              emotional_charge: analysis.emotional_charge,
-            },
+            analysis,
             'outgoing'
           );
           setSuggestions(suggestionsResult.suggestions);
@@ -363,6 +372,57 @@ export default function OutgoingScreen() {
                 </View>
               ))}
             </View>
+
+            {/* Key Detections - shows flagged phrases and emotion */}
+            {analysisResults && (analysisResults.escalation_detected || analysisResults.emotion?.primary_emotion !== 'calm') && (
+              <View style={styles.detectionsBox}>
+                <Text style={styles.detectionsTitle}>Key Detections</Text>
+
+                {/* Emotion */}
+                {analysisResults.emotion && analysisResults.emotion.primary_emotion !== 'calm' && analysisResults.emotion.confidence > 0.2 && (
+                  <View style={styles.detectionRow}>
+                    <Text style={styles.detectionLabel}>Tone:</Text>
+                    <View style={styles.detectionBadge}>
+                      <Text style={styles.detectionBadgeText}>
+                        {analysisResults.emotion.primary_emotion}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Severity */}
+                {analysisResults.severity_level !== 'low' && (
+                  <View style={styles.detectionRow}>
+                    <Text style={styles.detectionLabel}>Severity:</Text>
+                    <View style={[
+                      styles.detectionBadge,
+                      analysisResults.severity_level === 'high' ? styles.badgeHigh : styles.badgeMedium
+                    ]}>
+                      <Text style={styles.detectionBadgeText}>
+                        {analysisResults.severity_level}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Flagged phrases */}
+                {analysisResults.escalation_words && Object.keys(analysisResults.escalation_words).length > 0 && (
+                  <View style={styles.flaggedSection}>
+                    <Text style={styles.detectionLabel}>Flagged phrases:</Text>
+                    {Object.entries(analysisResults.escalation_words).map(([category, words]) => (
+                      <View key={category} style={styles.flaggedRow}>
+                        <Text style={styles.flaggedCategory}>
+                          {category.replace('_', ' ')}:
+                        </Text>
+                        <Text style={styles.flaggedWords}>
+                          {(words as string[]).map(w => `"${w}"`).join(', ')}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
 
             {/* Example Phrasing - Single focused option */}
             <View style={styles.rewritesSection}>
@@ -736,6 +796,70 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#e0e0e0',
     lineHeight: 19,
+    fontStyle: 'italic',
+  },
+  detectionsBox: {
+    backgroundColor: '#1a0a1f',
+    borderRadius: 12,
+    padding: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: '#e74c3c',
+  },
+  detectionsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#e74c3c',
+    marginBottom: 12,
+  },
+  detectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  detectionLabel: {
+    fontSize: 12,
+    color: '#a0a0b0',
+    fontWeight: '500',
+  },
+  detectionBadge: {
+    backgroundColor: '#e67e22',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  detectionBadgeText: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  badgeHigh: {
+    backgroundColor: '#e74c3c',
+  },
+  badgeMedium: {
+    backgroundColor: '#e67e22',
+  },
+  flaggedSection: {
+    marginTop: 8,
+    gap: 6,
+  },
+  flaggedRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+  },
+  flaggedCategory: {
+    fontSize: 11,
+    color: '#a0a0b0',
+    fontWeight: '500',
+    textTransform: 'capitalize',
+  },
+  flaggedWords: {
+    fontSize: 12,
+    color: '#e74c3c',
     fontStyle: 'italic',
   },
 });

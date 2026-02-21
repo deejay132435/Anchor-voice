@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
-import { analyzeAudio, generateSuggestions } from '../services/apiService';
+import { analyzeAudio, generateSuggestions, AudioAnalysisResponse } from '../services/apiService';
 
 export default function IncomingScreen() {
   const router = useRouter();
@@ -25,6 +25,7 @@ export default function IncomingScreen() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [hasAnalyzed, setHasAnalyzed] = useState(false);
   const [insights, setInsights] = useState<string[]>([]);
+  const [analysisResults, setAnalysisResults] = useState<AudioAnalysisResponse | null>(null);
   const [examplePhrasing, setExamplePhrasing] = useState<string>('');
 
   useEffect(() => {
@@ -67,29 +68,47 @@ export default function IncomingScreen() {
     setHasAnalyzed(false);
 
     try {
+      // Ensure we have a readable file URI (content:// URIs may not be directly readable)
+      let readableUri = uri;
+      if (uri.startsWith('content://')) {
+        const cachedPath = (FileSystem.cacheDirectory || FileSystem.documentDirectory) + 'incoming_audio_' + Date.now();
+        await FileSystem.copyAsync({ from: uri, to: cachedPath });
+        readableUri = cachedPath;
+      }
+
       // Read audio file as base64
-      const base64Audio = await FileSystem.readAsStringAsync(uri, {
+      const base64Audio = await FileSystem.readAsStringAsync(readableUri, {
         encoding: 'base64',
       });
 
+      // Get actual audio duration
+      let durationSeconds = 1;
+      try {
+        const { sound: tempSound } = await Audio.Sound.createAsync({ uri: readableUri });
+        const status = await tempSound.getStatusAsync();
+        if (status.isLoaded && status.durationMillis) {
+          durationSeconds = Math.max(1, Math.round(status.durationMillis / 1000));
+        }
+        await tempSound.unloadAsync();
+      } catch (e) {
+        console.warn('Could not determine audio duration, using fallback:', e);
+      }
+
       // Call analyze-audio endpoint
-      const analysis = await analyzeAudio(base64Audio, 1);
+      const analysis = await analyzeAudio(base64Audio, durationSeconds);
       setInsights(analysis.insights);
+      setAnalysisResults(analysis);
 
       // Call generate-suggestions endpoint for a response phrase
       const suggestionsResult = await generateSuggestions(
-        {
-          raised_voice: analysis.raised_voice,
-          fast_pacing: analysis.fast_pacing,
-          emotional_charge: analysis.emotional_charge,
-        },
+        analysis,
         'incoming'
       );
       setExamplePhrasing(suggestionsResult.suggestions[0] || "I hear you. Let me take a moment before responding.");
       setHasAnalyzed(true);
     } catch (error) {
       console.error('Error analyzing audio:', error);
-      Alert.alert('Error', 'Failed to analyze audio.');
+      Alert.alert('Analysis Error', 'Could not analyze audio. Check your connection and try again.');
     } finally {
       setIsAnalyzing(false);
     }
@@ -122,6 +141,7 @@ export default function IncomingScreen() {
       });
     } catch (error) {
       console.error('Error playing audio:', error);
+      setIsPlaying(false);
       Alert.alert('Error', 'Failed to play audio.');
     }
   };
@@ -192,6 +212,57 @@ export default function IncomingScreen() {
                 </View>
               ))}
             </View>
+
+            {/* Key Detections */}
+            {analysisResults && (analysisResults.escalation_detected || (analysisResults.emotion?.primary_emotion !== 'calm' && analysisResults.emotion?.confidence > 0.2)) && (
+              <View style={styles.detectionsBox}>
+                <Text style={styles.detectionsTitle}>Key Detections</Text>
+
+                {/* Emotion */}
+                {analysisResults.emotion && analysisResults.emotion.primary_emotion !== 'calm' && analysisResults.emotion.confidence > 0.2 && (
+                  <View style={styles.detectionRow}>
+                    <Text style={styles.detectionLabel}>Tone:</Text>
+                    <View style={styles.detectionBadge}>
+                      <Text style={styles.detectionBadgeText}>
+                        {analysisResults.emotion.primary_emotion}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Severity */}
+                {analysisResults.severity_level !== 'low' && (
+                  <View style={styles.detectionRow}>
+                    <Text style={styles.detectionLabel}>Severity:</Text>
+                    <View style={[
+                      styles.detectionBadge,
+                      analysisResults.severity_level === 'high' ? styles.badgeHigh : styles.badgeMedium
+                    ]}>
+                      <Text style={styles.detectionBadgeText}>
+                        {analysisResults.severity_level}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Flagged phrases */}
+                {analysisResults.escalation_words && Object.keys(analysisResults.escalation_words).length > 0 && (
+                  <View style={styles.flaggedSection}>
+                    <Text style={styles.detectionLabel}>Flagged phrases:</Text>
+                    {Object.entries(analysisResults.escalation_words).map(([category, words]) => (
+                      <View key={category} style={styles.flaggedRow}>
+                        <Text style={styles.flaggedCategory}>
+                          {category.replace('_', ' ')}:
+                        </Text>
+                        <Text style={styles.flaggedWords}>
+                          {(words as string[]).map(w => `"${w}"`).join(', ')}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
 
             {/* Example Phrasing */}
             <View style={styles.phrasingSection}>
@@ -389,5 +460,69 @@ const styles = StyleSheet.create({
     color: '#808080',
     lineHeight: 16,
     textAlign: 'center',
+  },
+  detectionsBox: {
+    backgroundColor: '#1a0a1f',
+    borderRadius: 12,
+    padding: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: '#e74c3c',
+  },
+  detectionsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#e74c3c',
+    marginBottom: 12,
+  },
+  detectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  detectionLabel: {
+    fontSize: 12,
+    color: '#a0a0b0',
+    fontWeight: '500',
+  },
+  detectionBadge: {
+    backgroundColor: '#e67e22',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  detectionBadgeText: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  badgeHigh: {
+    backgroundColor: '#e74c3c',
+  },
+  badgeMedium: {
+    backgroundColor: '#e67e22',
+  },
+  flaggedSection: {
+    marginTop: 8,
+    gap: 6,
+  },
+  flaggedRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+  },
+  flaggedCategory: {
+    fontSize: 11,
+    color: '#a0a0b0',
+    fontWeight: '500',
+    textTransform: 'capitalize',
+  },
+  flaggedWords: {
+    fontSize: 12,
+    color: '#e74c3c',
+    fontStyle: 'italic',
   },
 });
