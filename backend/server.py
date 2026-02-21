@@ -308,9 +308,8 @@ def analyze_audio_features(audio_data: bytes) -> Dict[str, Any]:
         max_rms = float(np.max(rms))
         rms_variance = float(np.var(rms))
 
-        # 2. Tempo/pacing analysis
-        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-        tempo = float(tempo) if not isinstance(tempo, np.ndarray) else float(tempo[0]) if len(tempo) > 0 else 0.0
+        # 2. Tempo/pacing - NOT using beat_track (designed for music, not speech)
+        # We rely on speech_rate from onset detection instead (see below)
 
         # 3. Pitch analysis (using zero-crossing rate as proxy for pitch activity)
         zcr = librosa.feature.zero_crossing_rate(y)[0]
@@ -350,7 +349,6 @@ def analyze_audio_features(audio_data: bytes) -> Dict[str, Any]:
             "mean_rms": mean_rms,
             "max_rms": max_rms,
             "rms_variance": rms_variance,
-            "tempo": tempo,
             "mean_zcr": mean_zcr,
             "zcr_variance": zcr_variance,
             "mean_spectral": mean_spectral,
@@ -385,52 +383,53 @@ def classify_emotion_from_audio(features: Dict[str, Any]) -> Dict[str, Any]:
         "sad": 0.0,
     }
 
-    # Anger indicators: high volume, high pitch variance, fast speech
-    if features["max_rms"] > 0.15:
+    # Anger indicators: requires genuinely high volume + pitch instability + fast speech
+    # Normal speech max_rms is typically 0.10-0.25; angry speech is 0.35+
+    if features["max_rms"] > 0.35:
         emotions["angry"] += 0.3
-    if features["pitch_variance"] > 5000:
+    if features["pitch_variance"] > 15000:
         emotions["angry"] += 0.2
-    if features["speech_rate"] > 4.0:
+    if features["speech_rate"] > 6.0:
         emotions["angry"] += 0.2
-    if features["spectral_variance"] > 500000:
+    if features["spectral_variance"] > 1500000:
         emotions["angry"] += 0.1
 
-    # Anxiety indicators: high pitch, fast speech, high variance
-    if features["mean_pitch"] > 200:
+    # Anxiety indicators: high pitch, fast speech, high volume variance
+    if features["mean_pitch"] > 300:
         emotions["anxious"] += 0.3
-    if features["speech_rate"] > 3.5:
+    if features["speech_rate"] > 5.5:
         emotions["anxious"] += 0.2
-    if features["rms_variance"] > 0.002:
+    if features["rms_variance"] > 0.005:
         emotions["anxious"] += 0.2
 
-    # Stress indicators: high energy variance, irregular tempo
-    if features["rms_variance"] > 0.003:
+    # Stress indicators: high energy variance, irregular patterns
+    if features["rms_variance"] > 0.008:
         emotions["stressed"] += 0.3
-    if features["zcr_variance"] > 0.01:
+    if features["zcr_variance"] > 0.02:
         emotions["stressed"] += 0.2
-    if features["mfcc_variance"] > 50:
+    if features["mfcc_variance"] > 100:
         emotions["stressed"] += 0.2
 
-    # Frustration: moderate volume increase, pitch instability
-    if 0.08 < features["mean_rms"] < 0.15:
+    # Frustration: moderate-high volume, pitch instability
+    if 0.15 < features["mean_rms"] < 0.35:
         emotions["frustrated"] += 0.3
-    if features["pitch_range"] > 100:
+    if features["pitch_range"] > 200:
         emotions["frustrated"] += 0.2
 
     # Sadness: low energy, slow speech, lower pitch
-    if features["mean_rms"] < 0.03:
+    if features["mean_rms"] < 0.02:
         emotions["sad"] += 0.3
-    if features["speech_rate"] < 2.0:
+    if features["speech_rate"] < 1.5:
         emotions["sad"] += 0.2
-    if features["mean_pitch"] < 150:
+    if features["mean_pitch"] < 120:
         emotions["sad"] += 0.2
 
-    # Calm: low variance, moderate values
-    if features["rms_variance"] < 0.001:
+    # Calm: low variance, moderate values — this should be the DEFAULT for normal speech
+    if features["rms_variance"] < 0.004:
         emotions["calm"] += 0.3
-    if features["pitch_variance"] < 2000:
+    if features["pitch_variance"] < 8000:
         emotions["calm"] += 0.2
-    if features["spectral_variance"] < 200000:
+    if features["spectral_variance"] < 800000:
         emotions["calm"] += 0.2
 
     # Normalize and find primary emotion
@@ -479,16 +478,18 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
     contains_dismissive = "dismissive" in escalation_words
 
     if features and isinstance(features, dict):
-        # Thresholds calibrated for voice messages
-        raised_voice = features.get("max_rms", 0) > 0.15 or features.get("mean_rms", 0) > 0.08
-        fast_pacing = features.get("tempo", 0) > 160 or features.get("speech_rate", 0) > 4.0
+        # Thresholds calibrated for mobile phone voice messages
+        # Normal speech: mean_rms ~0.03-0.10, max_rms ~0.10-0.25, speech_rate ~2.5-5.0
+        # Raised voice: mean_rms >0.15, max_rms >0.35
+        # Fast speech: speech_rate >6.0 (syllable-like events per second)
+        raised_voice = features.get("max_rms", 0) > 0.35 and features.get("mean_rms", 0) > 0.15
+        fast_pacing = features.get("speech_rate", 0) > 6.0
 
-        # Emotional charge from audio features
-        emotional_charge = (
-            features.get("rms_variance", 0) > 0.002 or
-            features.get("spectral_variance", 0) > 500000 or
-            (raised_voice and features.get("zcr_variance", 0) > 0.01)
-        )
+        # Emotional charge requires multiple signals, not just one
+        high_volume_variance = features.get("rms_variance", 0) > 0.005
+        high_spectral_variance = features.get("spectral_variance", 0) > 1000000
+        high_pitch_variance = features.get("pitch_variance", 0) > 10000
+        emotional_charge = sum([high_volume_variance, high_spectral_variance, high_pitch_variance]) >= 2
 
         # Get emotion classification
         emotion_result = classify_emotion_from_audio(features)
@@ -650,6 +651,44 @@ Return only the 3 phrases, one per line, no numbering or bullets."""
         return {"suggestions": DEFAULT_SUGGESTIONS_OUTGOING}
     else:
         return {"suggestions": DEFAULT_SUGGESTIONS_INCOMING}
+
+
+@api.post("/debug-audio")
+async def debug_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
+    """
+    Debug endpoint: returns raw audio feature values so you can calibrate thresholds.
+    Send the same audio data as analyze-audio and see the actual numbers.
+    """
+    try:
+        audio_data = base64.b64decode(req.audio_base64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 audio data")
+
+    features = analyze_audio_features(audio_data)
+
+    if not features:
+        return {"error": "Could not analyze audio", "librosa_available": LIBROSA_AVAILABLE}
+
+    # Show raw features alongside the thresholds they're compared against
+    return {
+        "raw_features": features,
+        "threshold_comparison": {
+            "raised_voice": {
+                "max_rms": {"value": features.get("max_rms", 0), "threshold": 0.35, "triggered": features.get("max_rms", 0) > 0.35},
+                "mean_rms": {"value": features.get("mean_rms", 0), "threshold": 0.15, "triggered": features.get("mean_rms", 0) > 0.15},
+                "result": features.get("max_rms", 0) > 0.35 and features.get("mean_rms", 0) > 0.15,
+            },
+            "fast_pacing": {
+                "speech_rate": {"value": features.get("speech_rate", 0), "threshold": 6.0, "triggered": features.get("speech_rate", 0) > 6.0},
+                "result": features.get("speech_rate", 0) > 6.0,
+            },
+            "emotional_charge": {
+                "rms_variance": {"value": features.get("rms_variance", 0), "threshold": 0.005, "triggered": features.get("rms_variance", 0) > 0.005},
+                "spectral_variance": {"value": features.get("spectral_variance", 0), "threshold": 1000000, "triggered": features.get("spectral_variance", 0) > 1000000},
+                "pitch_variance": {"value": features.get("pitch_variance", 0), "threshold": 10000, "triggered": features.get("pitch_variance", 0) > 10000},
+            },
+        },
+    }
 
 
 app.include_router(api)
