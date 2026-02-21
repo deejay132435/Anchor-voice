@@ -383,37 +383,36 @@ def classify_emotion_from_audio(features: Dict[str, Any]) -> Dict[str, Any]:
         "sad": 0.0,
     }
 
-    # Anger indicators: requires genuinely high volume + pitch instability + fast speech
-    # Normal speech max_rms is typically 0.10-0.25; angry speech is 0.35+
-    if features["max_rms"] > 0.35:
+    # Anger indicators: high volume + pitch instability + fast speech
+    if features["max_rms"] > 0.20:
         emotions["angry"] += 0.3
-    if features["pitch_variance"] > 15000:
+    if features["pitch_variance"] > 8000:
         emotions["angry"] += 0.2
-    if features["speech_rate"] > 6.0:
+    if features["speech_rate"] > 5.0:
         emotions["angry"] += 0.2
-    if features["spectral_variance"] > 1500000:
+    if features["spectral_variance"] > 700000:
         emotions["angry"] += 0.1
 
     # Anxiety indicators: high pitch, fast speech, high volume variance
-    if features["mean_pitch"] > 300:
+    if features["mean_pitch"] > 250:
         emotions["anxious"] += 0.3
-    if features["speech_rate"] > 5.5:
+    if features["speech_rate"] > 4.5:
         emotions["anxious"] += 0.2
-    if features["rms_variance"] > 0.005:
+    if features["rms_variance"] > 0.003:
         emotions["anxious"] += 0.2
 
     # Stress indicators: high energy variance, irregular patterns
-    if features["rms_variance"] > 0.008:
+    if features["rms_variance"] > 0.005:
         emotions["stressed"] += 0.3
-    if features["zcr_variance"] > 0.02:
+    if features["zcr_variance"] > 0.015:
         emotions["stressed"] += 0.2
-    if features["mfcc_variance"] > 100:
+    if features["mfcc_variance"] > 70:
         emotions["stressed"] += 0.2
 
     # Frustration: moderate-high volume, pitch instability
-    if 0.15 < features["mean_rms"] < 0.35:
+    if 0.10 < features["mean_rms"] < 0.20:
         emotions["frustrated"] += 0.3
-    if features["pitch_range"] > 200:
+    if features["pitch_range"] > 150:
         emotions["frustrated"] += 0.2
 
     # Sadness: low energy, slow speech, lower pitch
@@ -421,15 +420,15 @@ def classify_emotion_from_audio(features: Dict[str, Any]) -> Dict[str, Any]:
         emotions["sad"] += 0.3
     if features["speech_rate"] < 1.5:
         emotions["sad"] += 0.2
-    if features["mean_pitch"] < 120:
+    if features["mean_pitch"] < 130:
         emotions["sad"] += 0.2
 
-    # Calm: low variance, moderate values — this should be the DEFAULT for normal speech
-    if features["rms_variance"] < 0.004:
+    # Calm: low variance, moderate values
+    if features["rms_variance"] < 0.002:
         emotions["calm"] += 0.3
-    if features["pitch_variance"] < 8000:
+    if features["pitch_variance"] < 4000:
         emotions["calm"] += 0.2
-    if features["spectral_variance"] < 800000:
+    if features["spectral_variance"] < 400000:
         emotions["calm"] += 0.2
 
     # Normalize and find primary emotion
@@ -464,10 +463,13 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
 
     # Try real audio analysis with librosa
     features = analyze_audio_features(audio_data)
+    print(f"[analyze-audio] Audio features: {features}")
 
     # Transcribe audio for word analysis
     transcription = await transcribe_audio(audio_data)
+    print(f"[analyze-audio] Transcription: {transcription}")
     escalation_words = detect_escalation_words(transcription) if transcription else {}
+    print(f"[analyze-audio] Escalation words: {escalation_words}")
 
     # Detect escalating language from transcription
     contains_profanity = "profanity" in escalation_words
@@ -479,17 +481,15 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
 
     if features and isinstance(features, dict):
         # Thresholds calibrated for mobile phone voice messages
-        # Normal speech: mean_rms ~0.03-0.10, max_rms ~0.10-0.25, speech_rate ~2.5-5.0
-        # Raised voice: mean_rms >0.15, max_rms >0.35
-        # Fast speech: speech_rate >6.0 (syllable-like events per second)
-        raised_voice = features.get("max_rms", 0) > 0.35 and features.get("mean_rms", 0) > 0.15
-        fast_pacing = features.get("speech_rate", 0) > 6.0
+        # Raised voice: either loud peaks OR sustained high volume
+        raised_voice = features.get("max_rms", 0) > 0.20 or features.get("mean_rms", 0) > 0.12
+        fast_pacing = features.get("speech_rate", 0) > 5.0
 
-        # Emotional charge requires multiple signals, not just one
-        high_volume_variance = features.get("rms_variance", 0) > 0.005
-        high_spectral_variance = features.get("spectral_variance", 0) > 1000000
-        high_pitch_variance = features.get("pitch_variance", 0) > 10000
-        emotional_charge = sum([high_volume_variance, high_spectral_variance, high_pitch_variance]) >= 2
+        # Emotional charge: high variance in volume, spectrum, or pitch
+        high_volume_variance = features.get("rms_variance", 0) > 0.003
+        high_spectral_variance = features.get("spectral_variance", 0) > 700000
+        high_pitch_variance = features.get("pitch_variance", 0) > 8000
+        emotional_charge = sum([high_volume_variance, high_spectral_variance, high_pitch_variance]) >= 1
 
         # Get emotion classification
         emotion_result = classify_emotion_from_audio(features)
