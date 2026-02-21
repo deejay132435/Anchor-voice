@@ -82,7 +82,14 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-share-intent",
+        {
+          "androidIntentFilters": ["audio/*"],
+          "androidMultiIntentFilters": ["audio/*"]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
