@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a0a2e"/>
+      <stop offset="100%" stop-color="#0a0a14"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="220" fill="url(#bg)"/>
+
+  <!-- ANCHOR - uniform bright purple, no glow behind -->
+  <g transform="translate(512, 512)" fill="none" stroke="#c89bdf" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Top ring -->
+    <circle cx="0" cy="-280" r="55" fill="none"/>
+
+    <!-- Vertical shaft -->
+    <line x1="0" y1="-225" x2="0" y2="230"/>
+
+    <!-- Cross bar -->
+    <line x1="-140" y1="-90" x2="140" y2="-90"/>
+
+    <!-- Left hook -->
+    <path d="M-190 120 Q-190 230 -80 230" fill="none"/>
+
+    <!-- Right hook -->
+    <path d="M190 120 Q190 230 80 230" fill="none"/>
+
+    <!-- Bottom point -->
+    <circle cx="0" cy="230" r="12" fill="#c89bdf"/>
+  </g>
+</svg>
