@@ -214,15 +214,17 @@ export default function IncomingScreen() {
             </View>
 
             {/* Key Detections */}
-            {analysisResults && (analysisResults.escalation_detected || (analysisResults.emotion?.primary_emotion !== 'calm' && analysisResults.emotion?.confidence > 0.2)) && (
-              <View style={styles.detectionsBox}>
-                <Text style={styles.detectionsTitle}>Key Detections</Text>
+            {analysisResults && (analysisResults.escalation_detected || (analysisResults.emotion?.primary_emotion !== 'calm' && analysisResults.emotion?.confidence > 0.2)) && (() => {
+              const isPositive = ['excited', 'affectionate', 'grateful'].includes(analysisResults.emotion?.primary_emotion || '');
+              return (
+              <View style={[styles.detectionsBox, isPositive && styles.detectionsBoxPositive]}>
+                <Text style={[styles.detectionsTitle, isPositive && styles.detectionsTitlePositive]}>Key Detections</Text>
 
                 {/* Emotion */}
                 {analysisResults.emotion && analysisResults.emotion.primary_emotion !== 'calm' && analysisResults.emotion.confidence > 0.2 && (
                   <View style={styles.detectionRow}>
                     <Text style={styles.detectionLabel}>Tone:</Text>
-                    <View style={styles.detectionBadge}>
+                    <View style={[styles.detectionBadge, isPositive && styles.badgePositive]}>
                       <Text style={styles.detectionBadgeText}>
                         {analysisResults.emotion.primary_emotion}
                       </Text>
@@ -231,7 +233,7 @@ export default function IncomingScreen() {
                 )}
 
                 {/* Severity */}
-                {analysisResults.severity_level !== 'low' && (
+                {analysisResults.severity_level !== 'low' && analysisResults.severity_level !== 'none' && (
                   <View style={styles.detectionRow}>
                     <Text style={styles.detectionLabel}>Severity:</Text>
                     <View style={[
@@ -251,7 +253,7 @@ export default function IncomingScreen() {
                     <Text style={styles.detectionLabel}>Detected:</Text>
                     {Object.entries(analysisResults.escalation_words).map(([label, count]) => (
                       <View key={label} style={styles.flaggedRow}>
-                        <View style={styles.flaggedBullet} />
+                        <View style={[styles.flaggedBullet, isPositive && styles.flaggedBulletPositive]} />
                         <Text style={styles.flaggedCategory}>
                           {label}
                         </Text>
@@ -263,7 +265,8 @@ export default function IncomingScreen() {
                   </View>
                 )}
               </View>
-            )}
+              );
+            })()}
 
             {/* Example Phrasing */}
             <View style={styles.phrasingSection}>
@@ -469,11 +472,17 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3,
     borderLeftColor: '#e74c3c',
   },
+  detectionsBoxPositive: {
+    borderLeftColor: '#27ae60',
+  },
   detectionsTitle: {
     fontSize: 14,
     fontWeight: '600',
     color: '#e74c3c',
     marginBottom: 12,
+  },
+  detectionsTitlePositive: {
+    color: '#27ae60',
   },
   detectionRow: {
     flexDirection: 'row',
@@ -504,6 +513,9 @@ const styles = StyleSheet.create({
   badgeMedium: {
     backgroundColor: '#e67e22',
   },
+  badgePositive: {
+    backgroundColor: '#27ae60',
+  },
   flaggedSection: {
     marginTop: 8,
     gap: 6,
@@ -519,6 +531,9 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     backgroundColor: '#e74c3c',
+  },
+  flaggedBulletPositive: {
+    backgroundColor: '#27ae60',
   },
   flaggedCategory: {
     fontSize: 13,

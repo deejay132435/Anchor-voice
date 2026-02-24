@@ -97,6 +97,48 @@ ESCALATION_PATTERNS = {
     ],
 }
 
+# Positive patterns - words/phrases that indicate excitement, happiness, affection
+POSITIVE_PATTERNS = {
+    "affection": [
+        r"\b(i\s+love\s+you|love\s+you|i\s+miss\s+you|miss\s+you|you('re)?\s+amazing|you('re)?\s+the\s+best)\b",
+        r"\b(so\s+proud|proud\s+of\s+you|care\s+about\s+you|mean\s+so\s+much)\b",
+    ],
+    "excitement": [
+        r"\b(i\s+got\s+(the|a)|got\s+the\s+job|got\s+accepted|got\s+in|we\s+did\s+it|i\s+did\s+it)\b",
+        r"\b(so\s+excited|so\s+happy|can't\s+believe|oh\s+my\s+god|amazing|awesome|incredible|fantastic|wonderful)\b",
+        r"\b(best\s+day|best\s+news|guess\s+what|you\s+won't\s+believe)\b",
+    ],
+    "gratitude": [
+        r"\b(thank\s+you|thanks\s+so\s+much|so\s+grateful|appreciate|means\s+a\s+lot|couldn't\s+have\s+done)\b",
+    ],
+    "celebration": [
+        r"\b(congratulations|congrats|well\s+done|good\s+job|great\s+news|finally|we\s+made\s+it|let's\s+go)\b",
+        r"\b(cheers|hooray|woohoo|yay|yes|woo)\b",
+    ],
+}
+
+
+def detect_positive_words(text: str) -> Dict[str, List[str]]:
+    """
+    Detect positive words/phrases in transcribed text.
+    Returns dict of category -> list of matched phrases.
+    """
+    if not text:
+        return {}
+
+    text_lower = text.lower()
+    detected = {}
+
+    for category, patterns in POSITIVE_PATTERNS.items():
+        matches = []
+        for pattern in patterns:
+            found = re.findall(pattern, text_lower, re.IGNORECASE)
+            matches.extend(found)
+        if matches:
+            detected[category] = list(set(matches))
+
+    return detected
+
 
 def detect_escalation_words(text: str) -> Dict[str, List[str]]:
     """
@@ -478,7 +520,16 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
     transcription = await transcribe_audio(audio_data)
     print(f"[analyze-audio] Transcription: {transcription}")
     escalation_words = detect_escalation_words(transcription) if transcription else {}
+    positive_words = detect_positive_words(transcription) if transcription else {}
     print(f"[analyze-audio] Escalation words: {escalation_words}")
+    print(f"[analyze-audio] Positive words: {positive_words}")
+
+    # Detect positive sentiment
+    has_positive = len(positive_words) > 0
+    has_affection = "affection" in positive_words
+    has_excitement = "excitement" in positive_words
+    has_gratitude = "gratitude" in positive_words
+    has_celebration = "celebration" in positive_words
 
     # Detect escalating language from transcription
     contains_profanity = "profanity" in escalation_words
@@ -513,25 +564,49 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
         emotional_charge = raised_voice
         emotion_result = {"primary_emotion": "unknown", "confidence": 0.0, "emotions": {}}
 
-    # If voice sounds calm but words are aggressive, adjust the tone
-    # Saying profanity/threats calmly is still escalating — don't label it "calm"
+    # Positive words override negative classification when no actual negative words present
+    # High energy + "I got the job!" + "I love you" = excited, NOT angry
     word_escalation = any([contains_profanity, contains_labelling, contains_blame, contains_threats])
-    if word_escalation and emotion_result.get("primary_emotion") == "calm":
-        if contains_threats or contains_labelling:
-            emotion_result["primary_emotion"] = "aggressive"
+
+    if has_positive and not word_escalation:
+        # Positive content with high energy = excitement/happiness, not anger
+        if has_excitement or has_celebration:
+            emotion_result["primary_emotion"] = "excited"
+            emotion_result["confidence"] = 0.7
+        elif has_affection:
+            emotion_result["primary_emotion"] = "affectionate"
+            emotion_result["confidence"] = 0.6
+        elif has_gratitude:
+            emotion_result["primary_emotion"] = "grateful"
             emotion_result["confidence"] = 0.5
-        elif contains_profanity:
-            emotion_result["primary_emotion"] = "frustrated"
-            emotion_result["confidence"] = 0.4
-        elif contains_blame:
-            emotion_result["primary_emotion"] = "frustrated"
-            emotion_result["confidence"] = 0.3
-        # Also flag emotional charge since the words carry emotion even if voice doesn't
-        emotional_charge = True
+        # Positive messages are not escalating even if loud/fast
+        raised_voice = False
+        emotional_charge = False
+    elif word_escalation and not has_positive:
+        # Negative words with no positive context — adjust tone if "calm"
+        if emotion_result.get("primary_emotion") == "calm":
+            if contains_threats or contains_labelling:
+                emotion_result["primary_emotion"] = "aggressive"
+                emotion_result["confidence"] = 0.5
+            elif contains_profanity:
+                emotion_result["primary_emotion"] = "frustrated"
+                emotion_result["confidence"] = 0.4
+            elif contains_blame:
+                emotion_result["primary_emotion"] = "frustrated"
+                emotion_result["confidence"] = 0.3
+            emotional_charge = True
+    elif word_escalation and has_positive:
+        # Mixed signals — both positive and negative words. Stay cautious but note it
+        emotion_result["primary_emotion"] = "mixed"
+        emotion_result["confidence"] = 0.4
 
     # Escalation detection combines voice tone AND word content
+    # Positive messages should NOT be flagged as escalating
     voice_escalation = raised_voice and (fast_pacing or emotional_charge)
-    escalation_detected = voice_escalation or word_escalation
+    if has_positive and not word_escalation:
+        escalation_detected = False
+    else:
+        escalation_detected = voice_escalation or word_escalation
 
     # Calculate severity level
     signal_count = sum([
@@ -544,7 +619,9 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
         contains_threats,
     ])
 
-    if signal_count == 0:
+    if has_positive and not word_escalation:
+        severity_level = "none"
+    elif signal_count == 0:
         severity_level = "low"
     elif signal_count <= 2:
         severity_level = "medium"
@@ -554,33 +631,48 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
     # Generate insights (max 3)
     insights: List[str] = []
 
-    # Voice-based insights
-    if raised_voice:
-        insights.append("Raised voice detected")
-    if fast_pacing:
-        insights.append("Fast pacing detected")
-    if emotion_result["primary_emotion"] in ["angry", "frustrated"] and emotion_result["confidence"] > 0.3:
-        insights.append(f"{emotion_result['primary_emotion'].capitalize()} tone detected")
-    elif emotion_result["primary_emotion"] == "anxious" and emotion_result["confidence"] > 0.3:
-        insights.append("Anxious tone detected")
+    if has_positive and not word_escalation:
+        # Positive message insights
+        if has_excitement or has_celebration:
+            insights.append("Excitement detected - positive energy!")
+        if has_affection:
+            insights.append("Affection detected - warm message")
+        if has_gratitude:
+            insights.append("Gratitude detected - appreciative tone")
+        if has_celebration and has_excitement:
+            pass  # Already covered by excitement
+        elif has_celebration:
+            insights.append("Celebratory message detected")
+        if fast_pacing:
+            insights.append("Fast pacing - likely enthusiastic")
+    else:
+        # Voice-based insights
+        if raised_voice:
+            insights.append("Raised voice detected")
+        if fast_pacing:
+            insights.append("Fast pacing detected")
+        if emotion_result["primary_emotion"] in ["angry", "frustrated"] and emotion_result["confidence"] > 0.3:
+            insights.append(f"{emotion_result['primary_emotion'].capitalize()} tone detected")
+        elif emotion_result["primary_emotion"] == "anxious" and emotion_result["confidence"] > 0.3:
+            insights.append("Anxious tone detected")
 
-    # Word-based insights
-    if contains_profanity:
-        insights.append("Strong language detected")
-    if contains_blame:
-        insights.append("Blame language detected (e.g., 'you always...')")
-    if contains_labelling:
-        insights.append("Name-calling detected")
-    if contains_threats:
-        insights.append("Threatening language detected")
-    if contains_absolutes and not contains_blame:
-        insights.append("Absolute statements detected (always/never)")
-    if contains_dismissive:
-        insights.append("Dismissive language detected")
+        # Word-based insights
+        if contains_profanity:
+            insights.append("Strong language detected")
+        if contains_blame:
+            insights.append("Blame language detected (e.g., 'you always...')")
+        if contains_labelling:
+            insights.append("Name-calling detected")
+        if contains_threats:
+            insights.append("Threatening language detected")
+        if contains_absolutes and not contains_blame:
+            insights.append("Absolute statements detected (always/never)")
+        if contains_dismissive:
+            insights.append("Dismissive language detected")
 
-    # Escalation pattern insight
-    if escalation_detected and len(insights) < 3:
-        insights.append("Escalation pattern detected")
+        # Escalation pattern insight
+        if escalation_detected and len(insights) < 3:
+            insights.append("Escalation pattern detected")
 
     # Default for calm messages
     if not insights:
@@ -600,9 +692,18 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
         "dismissive": "Dismissive language",
         "interrupting": "Interrupting language",
     }
+    positive_category_labels = {
+        "affection": "Affection",
+        "excitement": "Excitement",
+        "gratitude": "Gratitude",
+        "celebration": "Celebration",
+    }
     detection_summary = {}
     for category, words in escalation_words.items():
         label = category_labels.get(category, category.replace("_", " ").title())
+        detection_summary[label] = len(words) if isinstance(words, list) else 1
+    for category, words in positive_words.items():
+        label = positive_category_labels.get(category, category.replace("_", " ").title())
         detection_summary[label] = len(words) if isinstance(words, list) else 1
 
     return {
