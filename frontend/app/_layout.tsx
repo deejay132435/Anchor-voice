@@ -3,10 +3,19 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { useShareIntent } from 'expo-share-intent';
+import Constants from 'expo-constants';
 
 export default function RootLayout() {
   const router = useRouter();
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntent();
+
+  // Pre-warm the backend on app launch so analysis is fast when needed
+  useEffect(() => {
+    const apiUrl = Constants.expoConfig?.extra?.apiUrl;
+    if (apiUrl) {
+      fetch(`${apiUrl}/api/health`).catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     if (hasShareIntent && shareIntent) {
