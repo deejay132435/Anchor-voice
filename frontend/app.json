@@ -13,6 +13,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.anchor.voice",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Record voice messages for conflict management",
         "NSCameraUsageDescription": "Access media to share recordings"
@@ -73,6 +74,7 @@
     "plugins": [
       "expo-router",
       [
+
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-image.png",
@@ -87,7 +89,14 @@
         "expo-share-intent",
         {
           "androidIntentFilters": ["audio/*"],
-          "androidMultiIntentFilters": ["audio/*"]
+          "androidMultiIntentFilters": ["audio/*"],
+          "iosActivationRules": {
+            "NSExtensionActivationSupportsFileWithMaxCount": 1,
+            "NSExtensionActivationSupportsMovieWithMaxCount": 0,
+            "NSExtensionActivationSupportsImageWithMaxCount": 0,
+            "NSExtensionActivationSupportsText": false,
+            "NSExtensionActivationSupportsWebURLWithMaxCount": 0
+          }
         }
       ]
     ],
