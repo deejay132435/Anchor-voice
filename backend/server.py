@@ -105,7 +105,7 @@ POSITIVE_PATTERNS = {
     ],
     "excitement": [
         r"\b(i\s+got\s+(the|a)|got\s+the\s+job|got\s+accepted|got\s+in|we\s+did\s+it|i\s+did\s+it)\b",
-        r"\b(so\s+excited|so\s+happy|can't\s+believe|oh\s+my\s+god|amazing|awesome|incredible|fantastic|wonderful)\b",
+        r"\b(so\s+excited|so\s+happy|can't\s+believe\s+it|oh\s+my\s+god|amazing|awesome|incredible|fantastic|wonderful)\b",
         r"\b(best\s+day|best\s+news|guess\s+what|you\s+won't\s+believe)\b",
     ],
     "gratitude": [
@@ -562,9 +562,17 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
         emotional_charge = raised_voice
         emotion_result = {"primary_emotion": "unknown", "confidence": 0.0, "emotions": {}}
 
-    # Positive words override negative classification when no actual negative words present
-    # High energy + "I got the job!" + "I love you" = excited, NOT angry
+    # Words are more reliable than audio features for determining intent
+    # When we have a transcription, words should override audio-only classification
     word_escalation = any([contains_profanity, contains_labelling, contains_blame, contains_threats])
+    has_any_negative = word_escalation or contains_absolutes or contains_dismissive
+
+    # If we have a transcription with no negative OR positive words, trust the words = calm
+    # This prevents loud but calm-worded speech from being classified as angry
+    if transcription and not has_any_negative and not has_positive:
+        if emotion_result.get("primary_emotion") in ["angry", "frustrated", "anxious"]:
+            emotion_result["primary_emotion"] = "calm"
+            emotion_result["confidence"] = 0.4
 
     if has_positive and not word_escalation:
         # Positive content with high energy = excitement/happiness, not anger
