@@ -41,6 +41,7 @@ export interface AudioAnalysisResponse {
   };
   insights: string[];
   severity_level: string;
+  suggestions?: string[];  // Included when message_type is provided
 }
 
 export interface SuggestionResponse {
@@ -89,7 +90,8 @@ const fetchWithTimeout = async (
 
 export const analyzeAudio = async (
   audioBase64: string,
-  durationSeconds: number
+  durationSeconds: number,
+  messageType?: 'outgoing' | 'incoming'
 ): Promise<AudioAnalysisResponse> => {
   // Validate input
   if (!audioBase64 || audioBase64.length === 0) {
@@ -99,15 +101,21 @@ export const analyzeAudio = async (
     throw new Error('Audio file too large (max 5MB)');
   }
 
+  const body: Record<string, any> = {
+    audio_base64: audioBase64,
+    duration_seconds: Math.max(1, durationSeconds),
+  };
+  // Include message_type to get suggestions in the same response (saves a round trip)
+  if (messageType) {
+    body.message_type = messageType;
+  }
+
   const response = await fetchWithTimeout(`${API_URL}/api/analyze-audio`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      audio_base64: audioBase64,
-      duration_seconds: Math.max(1, durationSeconds),
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {

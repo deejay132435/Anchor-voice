@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import { analyzeAudio, generateSuggestions, AudioAnalysisResponse } from '../services/apiService';
+import { analyzeAudio, AudioAnalysisResponse } from '../services/apiService';
 
 export default function OutgoingScreen() {
   const router = useRouter();
@@ -153,16 +153,10 @@ export default function OutgoingScreen() {
             console.warn('Could not get exact duration, using recorded duration:', e);
           }
 
-          // Call analyze-audio endpoint with accurate duration
-          const analysis = await analyzeAudio(base64Audio, actualDuration);
+          // Single call: analyze audio AND generate suggestions together (faster)
+          const analysis = await analyzeAudio(base64Audio, actualDuration, 'outgoing');
           setAnalysisResults(analysis);
-
-          // Call generate-suggestions endpoint
-          const suggestionsResult = await generateSuggestions(
-            analysis,
-            'outgoing'
-          );
-          setSuggestions(suggestionsResult.suggestions);
+          setSuggestions(analysis.suggestions || ["I'm getting heated. I need to pause before this goes any further."]);
           setShowSuggestions(true);
 
         } catch (error) {

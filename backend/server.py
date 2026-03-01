@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import io
 import os
@@ -211,6 +212,7 @@ async def transcribe_audio(audio_data: bytes) -> Optional[str]:
 class AnalyzeAudioRequest(BaseModel):
     audio_base64: str
     duration_seconds: float
+    message_type: Optional[str] = None  # "outgoing" or "incoming" — if set, includes suggestions in response
 
 
 class AnalysisResults(BaseModel):
@@ -510,12 +512,13 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
     if not audio_data:
         raise HTTPException(status_code=400, detail="Empty audio data")
 
-    # Try real audio analysis with librosa
-    features = analyze_audio_features(audio_data)
+    # Run librosa analysis and Whisper transcription IN PARALLEL
+    # librosa is CPU-bound, Whisper is network I/O — no reason to wait for one before the other
+    loop = asyncio.get_event_loop()
+    features_task = loop.run_in_executor(None, analyze_audio_features, audio_data)
+    transcription_task = transcribe_audio(audio_data)
+    features, transcription = await asyncio.gather(features_task, transcription_task)
     print(f"[analyze-audio] Audio features: {features}")
-
-    # Transcribe audio for word analysis
-    transcription = await transcribe_audio(audio_data)
     print(f"[analyze-audio] Transcription: {transcription}")
     escalation_words = detect_escalation_words(transcription) if transcription else {}
     positive_words = detect_positive_words(transcription) if transcription else {}
@@ -715,7 +718,7 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
         label = positive_category_labels.get(category, category.replace("_", " ").title())
         detection_summary[label] = len(words) if isinstance(words, list) else 1
 
-    return {
+    result = {
         "raised_voice": raised_voice,
         "fast_pacing": fast_pacing,
         "emotional_charge": emotional_charge,
@@ -734,28 +737,35 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
         # Only the analysis results are returned
     }
 
+    # If message_type is provided, generate suggestions in the same request
+    # This saves a full network round trip (2-5 seconds)
+    if req.message_type:
+        suggestions = await _generate_suggestions_internal(
+            raised_voice, fast_pacing, emotional_charge, req.message_type
+        )
+        result["suggestions"] = suggestions
 
-@api.post("/generate-suggestions")
-async def generate_suggestions(req: GenerateSuggestionsRequest) -> Dict[str, Any]:
-    """
-    Generate 3 de-escalation suggestions using Claude AI.
-    Falls back to default suggestions if Claude is unavailable.
-    """
-    analysis = req.analysis_results
-    message_type = req.message_type.lower()
+    return result
 
-    # Determine context for AI prompt
+
+async def _generate_suggestions_internal(
+    raised_voice: bool, fast_pacing: bool, emotional_charge: bool, message_type: str
+) -> List[str]:
+    """
+    Internal: generate 3 de-escalation suggestions using Claude AI.
+    Returns list of suggestion strings.
+    """
+    message_type = message_type.lower()
     signals = []
-    if analysis.raised_voice:
+    if raised_voice:
         signals.append("raised voice")
-    if analysis.fast_pacing:
+    if fast_pacing:
         signals.append("fast pacing")
-    if analysis.emotional_charge:
+    if emotional_charge:
         signals.append("emotional charge")
 
-    is_heated = any([analysis.raised_voice, analysis.fast_pacing, analysis.emotional_charge])
+    is_heated = any([raised_voice, fast_pacing, emotional_charge])
 
-    # Try Claude API if available
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if CLAUDE_AVAILABLE and api_key:
         try:
@@ -767,7 +777,7 @@ Analysis shows: {', '.join(signals) if signals else 'calm tone'}.
 Generate exactly 3 short, calm, neutral phrases they could say instead to de-escalate.
 Each phrase should be 1-2 sentences max. Focus on self-regulation, not blaming others.
 Return only the 3 phrases, one per line, no numbering or bullets."""
-            else:  # incoming
+            else:
                 prompt = f"""You are helping someone respond calmly to a voice message they received.
 Analysis of the received message shows: {', '.join(signals) if signals else 'calm tone'}.
 {'The message seems heated.' if is_heated else 'The message seems calm.'}
@@ -783,24 +793,37 @@ Return only the 3 phrases, one per line, no numbering or bullets."""
                 messages=[{"role": "user", "content": prompt}]
             )
 
-            # Parse response into suggestions
             response_text = response.content[0].text
             lines = [line.strip() for line in response_text.strip().split('\n') if line.strip()]
             suggestions = lines[:3]
 
-            # Ensure we have exactly 3 suggestions, fall back to defaults if not
             if len(suggestions) >= 3:
-                return {"suggestions": suggestions}
+                return suggestions
 
         except Exception as e:
-            # Log error but fall through to defaults
             print(f"Claude API error: {e}")
 
-    # Fallback to default suggestions
+    # Fallback defaults
     if message_type == "outgoing":
-        return {"suggestions": DEFAULT_SUGGESTIONS_OUTGOING}
+        return DEFAULT_SUGGESTIONS_OUTGOING
     else:
-        return {"suggestions": DEFAULT_SUGGESTIONS_INCOMING}
+        return DEFAULT_SUGGESTIONS_INCOMING
+
+
+@api.post("/generate-suggestions")
+async def generate_suggestions(req: GenerateSuggestionsRequest) -> Dict[str, Any]:
+    """
+    Generate 3 de-escalation suggestions using Claude AI.
+    Falls back to default suggestions if Claude is unavailable.
+    Note: prefer using message_type in /api/analyze-audio to get suggestions in one call.
+    """
+    suggestions = await _generate_suggestions_internal(
+        req.analysis_results.raised_voice,
+        req.analysis_results.fast_pacing,
+        req.analysis_results.emotional_charge,
+        req.message_type,
+    )
+    return {"suggestions": suggestions}
 
 
 @api.post("/debug-audio")

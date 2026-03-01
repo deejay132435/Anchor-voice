@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
-import { analyzeAudio, generateSuggestions, AudioAnalysisResponse } from '../services/apiService';
+import { analyzeAudio, AudioAnalysisResponse } from '../services/apiService';
 
 export default function IncomingScreen() {
   const router = useRouter();
@@ -94,17 +94,11 @@ export default function IncomingScreen() {
         console.warn('Could not determine audio duration, using fallback:', e);
       }
 
-      // Call analyze-audio endpoint
-      const analysis = await analyzeAudio(base64Audio, durationSeconds);
+      // Single call: analyze audio AND generate suggestions together (faster)
+      const analysis = await analyzeAudio(base64Audio, durationSeconds, 'incoming');
       setInsights(analysis.insights);
       setAnalysisResults(analysis);
-
-      // Call generate-suggestions endpoint for a response phrase
-      const suggestionsResult = await generateSuggestions(
-        analysis,
-        'incoming'
-      );
-      setExamplePhrasing(suggestionsResult.suggestions[0] || "I hear you. Let me take a moment before responding.");
+      setExamplePhrasing(analysis.suggestions?.[0] || "I hear you. Let me take a moment before responding.");
       setHasAnalyzed(true);
     } catch (error) {
       console.error('Error analyzing audio:', error);
