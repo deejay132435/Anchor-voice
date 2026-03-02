@@ -33,7 +33,7 @@ export interface AudioAnalysisResponse {
   contains_threats: boolean;
   contains_dismissive: boolean;
   escalation_detected: boolean;
-  escalation_words: Record<string, string[]>;
+  escalation_words: Record<string, number>;
   emotion: {
     primary_emotion: string;
     confidence: number;

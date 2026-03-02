@@ -15,6 +15,9 @@ import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { analyzeAudio, AudioAnalysisResponse } from '../services/apiService';
+import { getOrCreateDeviceId } from '../services/deviceService';
+import { getPairInfo } from '../services/pairingService';
+import { sendVoiceMessage } from '../services/messagingService';
 
 export default function OutgoingScreen() {
   const router = useRouter();
@@ -29,11 +32,34 @@ export default function OutgoingScreen() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
-  
+
+  // In-app messaging state
+  const [isPaired, setIsPaired] = useState(false);
+  const [pairId, setPairId] = useState<string | null>(null);
+  const [deviceId, setDeviceId] = useState<string>('');
+  const [isSendingToPartner, setIsSendingToPartner] = useState(false);
+  const sendMode = params.sendMode as string | undefined;
+
   // Incoming context (from received message)
   const [incomingInsights, setIncomingInsights] = useState<string[]>([]);
   const [incomingPhrasing, setIncomingPhrasing] = useState<string>('');
   const [showIncomingContext, setShowIncomingContext] = useState(true);
+
+  // Check pairing status on mount
+  useEffect(() => {
+    const checkPairing = async () => {
+      try {
+        const id = await getOrCreateDeviceId();
+        setDeviceId(id);
+        const pair = await getPairInfo(id);
+        setIsPaired(!!pair);
+        setPairId(pair?.pairId || null);
+      } catch (err) {
+        console.log('[Outgoing] Pairing check error:', err);
+      }
+    };
+    checkPairing();
+  }, []);
 
   useEffect(() => {
     // Check if we have incoming context from a received message
@@ -230,6 +256,31 @@ export default function OutgoingScreen() {
     } catch (error) {
       console.error('Error sharing recording:', error);
       Alert.alert('Error', 'Failed to share recording.');
+    }
+  };
+
+  const sendToPartner = async () => {
+    if (!recordedUri || !pairId || !deviceId) return;
+
+    setIsSendingToPartner(true);
+    try {
+      const duration = recordingDuration || 1;
+      const summary = {
+        severity_level: analysisResults?.severity_level || 'low',
+        primary_emotion: analysisResults?.emotion?.primary_emotion || 'calm',
+        insights: analysisResults?.insights || [],
+      };
+
+      await sendVoiceMessage(pairId, deviceId, recordedUri, duration, summary);
+
+      Alert.alert('Sent', 'Voice message sent to your partner.', [
+        { text: 'OK', onPress: () => router.back() },
+      ]);
+    } catch (err: any) {
+      console.log('[Outgoing] Send to partner error:', err);
+      Alert.alert('Error', 'Failed to send message. Please try again.');
+    } finally {
+      setIsSendingToPartner(false);
     }
   };
 
@@ -441,27 +492,47 @@ export default function OutgoingScreen() {
           </View>
         )}
 
-        {/* Action Buttons - Only Re-record and Send Anyway */}
+        {/* Action Buttons */}
         {recordedUri && !isRecording && !isLoadingSuggestions && (
-          <View style={styles.actionButtons}>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.rerecordButton]}
-              onPress={() => {
-                setRecordedUri(null);
-                setAnalysisResults(null);
-                // DO NOT clear suggestions - keep them visible for reference during re-record
-              }}
-            >
-              <Text style={styles.actionButtonText}>Re-record</Text>
-            </TouchableOpacity>
+          <View style={styles.actionButtonsColumn}>
+            {/* Send to Partner (if paired) */}
+            {isPaired && (
+              <TouchableOpacity
+                style={[styles.actionButtonFull, styles.partnerSendButton]}
+                onPress={sendToPartner}
+                disabled={isSendingToPartner}
+              >
+                {isSendingToPartner ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="send" size={20} color="#fff" />
+                    <Text style={styles.actionButtonText}>Send to Partner</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
 
-            <TouchableOpacity
-              style={[styles.actionButton, styles.sendButton]}
-              onPress={shareRecording}
-            >
-              <Ionicons name="share" size={20} color="#fff" />
-              <Text style={styles.actionButtonText}>Send Anyway</Text>
-            </TouchableOpacity>
+            <View style={styles.actionButtons}>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.rerecordButton]}
+                onPress={() => {
+                  setRecordedUri(null);
+                  setAnalysisResults(null);
+                  // DO NOT clear suggestions - keep them visible for reference during re-record
+                }}
+              >
+                <Text style={styles.actionButtonText}>Re-record</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.actionButton, styles.sendButton]}
+                onPress={shareRecording}
+              >
+                <Ionicons name="share" size={20} color="#fff" />
+                <Text style={styles.actionButtonText}>Share</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
       </ScrollView>
@@ -632,10 +703,13 @@ const styles = StyleSheet.create({
     color: '#e0e0e0',
     lineHeight: 22,
   },
+  actionButtonsColumn: {
+    gap: 12,
+    marginTop: 8,
+  },
   actionButtons: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 8,
   },
   actionButton: {
     flex: 1,
@@ -646,11 +720,22 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 6,
   },
+  actionButtonFull: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
   rerecordButton: {
     backgroundColor: '#6c3483',
   },
   sendButton: {
     backgroundColor: '#27ae60',
+  },
+  partnerSendButton: {
+    backgroundColor: '#9b59b6',
   },
   actionButtonText: {
     fontSize: 14,

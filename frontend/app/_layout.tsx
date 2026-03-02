@@ -4,10 +4,26 @@ import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { useShareIntent } from 'expo-share-intent';
 import Constants from 'expo-constants';
+import { ensureAuth } from '../services/firebaseConfig';
+import { getOrCreateDeviceId, registerDevice } from '../services/deviceService';
 
 export default function RootLayout() {
   const router = useRouter();
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntent();
+
+  // Initialize Firebase auth + device identity on app launch
+  useEffect(() => {
+    const init = async () => {
+      try {
+        await ensureAuth();
+        const deviceId = await getOrCreateDeviceId();
+        await registerDevice(deviceId);
+      } catch (err) {
+        console.log('[Layout] Firebase init error:', err);
+      }
+    };
+    init();
+  }, []);
 
   // Pre-warm the backend on app launch so analysis is fast when needed
   useEffect(() => {
@@ -62,6 +78,20 @@ export default function RootLayout() {
           name="incoming"
           options={{
             title: 'Received Message',
+            presentation: 'card',
+          }}
+        />
+        <Stack.Screen
+          name="pair"
+          options={{
+            title: 'Partner Pairing',
+            presentation: 'card',
+          }}
+        />
+        <Stack.Screen
+          name="messages"
+          options={{
+            title: 'Messages',
             presentation: 'card',
           }}
         />

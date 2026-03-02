@@ -15,6 +15,8 @@ import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { analyzeAudio, AudioAnalysisResponse } from '../services/apiService';
+import { downloadVoiceMessage, markAsListened } from '../services/messagingService';
+import { getOrCreateDeviceId } from '../services/deviceService';
 
 export default function IncomingScreen() {
   const router = useRouter();
@@ -28,7 +30,20 @@ export default function IncomingScreen() {
   const [analysisResults, setAnalysisResults] = useState<AudioAnalysisResponse | null>(null);
   const [examplePhrasing, setExamplePhrasing] = useState<string>('');
 
+  // In-app message params
+  const inAppMessageId = params.messageId as string | undefined;
+  const inAppPairId = params.pairId as string | undefined;
+  const inAppAudioUrl = params.audioUrl as string | undefined;
+  const isInAppMessage = !!(inAppMessageId && inAppPairId && inAppAudioUrl);
+
   useEffect(() => {
+    // Handle in-app message
+    if (isInAppMessage) {
+      console.log('[Incoming] In-app message received:', inAppMessageId);
+      loadInAppMessage();
+      return;
+    }
+
     // Check if audio was shared from another app
     if (params.sharedUri && typeof params.sharedUri === 'string') {
       console.log('[Incoming] Shared audio received:', params.sharedUri);
@@ -41,7 +56,21 @@ export default function IncomingScreen() {
         sound.unloadAsync();
       }
     };
-  }, [params.sharedUri]);
+  }, [params.sharedUri, inAppMessageId]);
+
+  const loadInAppMessage = async () => {
+    if (!inAppAudioUrl || !inAppMessageId) return;
+    try {
+      setIsAnalyzing(true);
+      const localUri = await downloadVoiceMessage(inAppAudioUrl, inAppMessageId);
+      setAudioUri(localUri);
+      await analyzeIncomingAudio(localUri);
+    } catch (err) {
+      console.log('[Incoming] Download error:', err);
+      Alert.alert('Error', 'Could not download message.');
+      setIsAnalyzing(false);
+    }
+  };
 
   const pickAudioFile = async () => {
     try {
@@ -128,9 +157,18 @@ export default function IncomingScreen() {
       setSound(newSound);
       setIsPlaying(true);
 
-      newSound.setOnPlaybackStatusUpdate((status) => {
+      newSound.setOnPlaybackStatusUpdate(async (status) => {
         if (status.isLoaded && status.didJustFinish) {
           setIsPlaying(false);
+          // Mark in-app messages as listened when playback finishes
+          if (isInAppMessage && inAppPairId && inAppMessageId) {
+            try {
+              const myDeviceId = await getOrCreateDeviceId();
+              await markAsListened(inAppPairId, inAppMessageId, myDeviceId);
+            } catch (err) {
+              console.log('[Incoming] Mark as listened error:', err);
+            }
+          }
         }
       });
     } catch (error) {
@@ -156,6 +194,7 @@ export default function IncomingScreen() {
       params: {
         incomingInsights: JSON.stringify(insights),
         incomingPhrasing: examplePhrasing,
+        ...(isInAppMessage ? { sendMode: 'inapp' } : {}),
       }
     });
   };
