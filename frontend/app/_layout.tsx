@@ -4,12 +4,18 @@ import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { useShareIntent } from 'expo-share-intent';
 import Constants from 'expo-constants';
+import { preventScreenCaptureAsync } from 'expo-screen-capture';
 import { ensureAuth } from '../services/firebaseConfig';
 import { getOrCreateDeviceId, registerDevice } from '../services/deviceService';
 
 export default function RootLayout() {
   const router = useRouter();
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntent();
+
+  // Prevent screenshots and screen recording for privacy
+  useEffect(() => {
+    preventScreenCaptureAsync();
+  }, []);
 
   // Initialize Firebase auth + device identity on app launch
   useEffect(() => {
