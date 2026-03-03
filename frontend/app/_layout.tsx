@@ -14,7 +14,7 @@ export default function RootLayout() {
 
   // Prevent screenshots and screen recording for privacy
   useEffect(() => {
-    preventScreenCaptureAsync();
+    preventScreenCaptureAsync().catch(() => {});
   }, []);
 
   // Initialize Firebase auth + device identity on app launch

@@ -8,12 +8,9 @@ import {
   deleteObject,
 } from 'firebase/storage';
 import {
-  initializeAuth,
+  getAuth,
   signInAnonymously,
-  // @ts-ignore — getReactNativePersistence exists in firebase/auth for RN
-  getReactNativePersistence,
 } from 'firebase/auth';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyDyitECgRB67OVeh1082D0x9pqQX1mjPB4',
@@ -28,21 +25,23 @@ const firebaseConfig = {
 // Initialize Firebase (only once)
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
-// Initialize Auth with AsyncStorage persistence for React Native
-const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(AsyncStorage),
-});
-
+// Use getAuth instead of initializeAuth to avoid crashes on hot reload
+const auth = getAuth(app);
 const database = getDatabase(app);
 const storage = getStorage(app);
 
 /** Sign in anonymously — gives us a uid for security rules without requiring accounts */
 export async function ensureAuth(): Promise<string> {
-  if (auth.currentUser) {
-    return auth.currentUser.uid;
+  try {
+    if (auth.currentUser) {
+      return auth.currentUser.uid;
+    }
+    const credential = await signInAnonymously(auth);
+    return credential.user.uid;
+  } catch (err) {
+    console.log('[Firebase] Auth error (non-fatal):', err);
+    return 'anonymous';
   }
-  const credential = await signInAnonymously(auth);
-  return credential.user.uid;
 }
 
 export { app, auth, database, storage, storageRef, uploadBytes, getDownloadURL, deleteObject };
