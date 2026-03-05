@@ -74,7 +74,6 @@
     "plugins": [
       "expo-router",
       [
-
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-image.png",
@@ -88,8 +87,12 @@
       [
         "expo-share-intent",
         {
-          "androidIntentFilters": ["audio/*"],
-          "androidMultiIntentFilters": ["audio/*"],
+          "androidIntentFilters": [
+            "audio/*"
+          ],
+          "androidMultiIntentFilters": [
+            "audio/*"
+          ],
           "iosActivationRules": {
             "NSExtensionActivationSupportsFileWithMaxCount": 1,
             "NSExtensionActivationSupportsMovieWithMaxCount": 0,
@@ -98,7 +101,8 @@
             "NSExtensionActivationSupportsWebURLWithMaxCount": 0
           }
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true

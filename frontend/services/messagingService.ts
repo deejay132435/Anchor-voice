@@ -1,4 +1,4 @@
-import { ref, set, push, get, onChildAdded, onChildChanged, off, query, orderByChild, limitToLast } from 'firebase/database';
+import { ref, set, push, get, onChildAdded, onChildChanged, query, orderByChild, limitToLast } from 'firebase/database';
 import {
   database,
   storage,
@@ -100,21 +100,21 @@ export function subscribeToMessages(
     deleted: data.deleted || false,
   });
 
-  const addedHandler = onChildAdded(messagesRef, (snapshot) => {
+  const unsubAdded = onChildAdded(messagesRef, (snapshot) => {
     if (snapshot.key && snapshot.val()) {
       onNew(parseMessage(snapshot.key, snapshot.val()));
     }
   });
 
-  const changedHandler = onChildChanged(messagesRef, (snapshot) => {
+  const unsubChanged = onChildChanged(messagesRef, (snapshot) => {
     if (snapshot.key && snapshot.val()) {
       onUpdated(parseMessage(snapshot.key, snapshot.val()));
     }
   });
 
   return () => {
-    off(messagesRef, 'child_added', addedHandler);
-    off(messagesRef, 'child_changed', changedHandler);
+    unsubAdded();
+    unsubChanged();
   };
 }
 

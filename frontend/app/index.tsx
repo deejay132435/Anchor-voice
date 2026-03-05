@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { getOrCreateDeviceId } from '../services/deviceService';
 import { getPairInfo } from '../services/pairingService';
-import { ref, onValue, off } from 'firebase/database';
+import { ref, onValue } from 'firebase/database';
 import { database } from '../services/firebaseConfig';
 
 export default function HomeScreen() {
@@ -53,7 +53,7 @@ export default function HomeScreen() {
                 }
               });
               setUnreadCount(count);
-            }) as any;
+            });
           }
         } catch (err) {
           console.log('[HomeScreen] Pairing check error:', err);
@@ -64,7 +64,7 @@ export default function HomeScreen() {
 
       return () => {
         if (messageUnsub) {
-          // Clean up listener
+          messageUnsub();
         }
       };
     }, [])

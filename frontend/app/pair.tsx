@@ -7,8 +7,8 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
-  Clipboard,
 } from 'react-native';
+import * as ExpoClipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,7 +17,6 @@ import {
   createPairingCode,
   redeemPairingCode,
   onCodeRedeemed,
-  getPairInfo,
 } from '../services/pairingService';
 
 type Tab = 'create' | 'enter';
@@ -110,9 +109,9 @@ export default function PairScreen() {
     }
   };
 
-  const copyCode = () => {
+  const copyCode = async () => {
     if (generatedCode) {
-      Clipboard.setString(generatedCode);
+      await ExpoClipboard.setStringAsync(generatedCode);
       Alert.alert('Copied', 'Code copied to clipboard');
     }
   };

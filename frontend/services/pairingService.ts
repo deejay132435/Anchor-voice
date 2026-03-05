@@ -1,4 +1,4 @@
-import { ref, set, get, push, onValue, off } from 'firebase/database';
+import { ref, set, get, push, onValue } from 'firebase/database';
 import { database } from './firebaseConfig';
 import { updateDevicePairId } from './deviceService';
 
@@ -57,13 +57,13 @@ export function onCodeRedeemed(
   callback: (pairId: string) => void
 ): () => void {
   const codeRef = ref(database, `pairing_codes/${code}`);
-  const handler = onValue(codeRef, (snapshot) => {
+  const unsubscribe = onValue(codeRef, (snapshot) => {
     const data = snapshot.val();
     if (data?.status === 'used' && data?.pair_id) {
       callback(data.pair_id);
     }
   });
-  return () => off(codeRef, 'value', handler);
+  return unsubscribe;
 }
 
 /** Redeem a pairing code — connects two devices */
