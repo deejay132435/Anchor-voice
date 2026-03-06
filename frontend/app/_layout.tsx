@@ -12,10 +12,11 @@ export default function RootLayout() {
   const router = useRouter();
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntent();
 
-  // Prevent screenshots and screen recording for privacy
-  useEffect(() => {
-    preventScreenCaptureAsync().catch(() => {});
-  }, []);
+  // Screenshot protection disabled temporarily for Play Store screenshots
+  // TODO: Re-enable before production release
+  // useEffect(() => {
+  //   preventScreenCaptureAsync().catch(() => {});
+  // }, []);
 
   // Initialize Firebase auth + device identity on app launch
   useEffect(() => {
