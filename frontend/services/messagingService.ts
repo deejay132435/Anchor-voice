@@ -6,6 +6,7 @@ import {
   uploadBytes,
   getDownloadURL,
   deleteObject,
+  ensureAuth,
 } from './firebaseConfig';
 import * as FileSystem from 'expo-file-system/legacy';
 
@@ -37,19 +38,20 @@ export async function sendVoiceMessage(
   audioDurationSeconds: number,
   analysisSummary: AnalysisSummary
 ): Promise<string> {
+  // Ensure Firebase auth before uploading (Storage rules require auth)
+  await ensureAuth();
+
   // Generate message ID
   const messagesRef = ref(database, `messages/${pairId}`);
   const newMsgRef = push(messagesRef);
   const messageId = newMsgRef.key!;
 
-  // Read the audio file and upload to Firebase Storage
-  const audioBase64 = await FileSystem.readAsStringAsync(audioUri, {
-    encoding: 'base64',
-  });
-  const audioBytes = Uint8Array.from(atob(audioBase64), (c) => c.charCodeAt(0));
+  // Upload audio to Firebase Storage using fetch blob (memory-efficient)
+  const response = await fetch(audioUri);
+  const blob = await response.blob();
 
   const audioStorageRef = storageRef(storage, `pairs/${pairId}/${messageId}.m4a`);
-  await uploadBytes(audioStorageRef, audioBytes, { contentType: 'audio/m4a' });
+  await uploadBytes(audioStorageRef, blob, { contentType: 'audio/mp4' });
 
   const downloadUrl = await getDownloadURL(audioStorageRef);
 

@@ -277,8 +277,11 @@ export default function OutgoingScreen() {
         { text: 'OK', onPress: () => router.back() },
       ]);
     } catch (err: any) {
-      console.log('[Outgoing] Send to partner error:', err);
-      Alert.alert('Error', 'Failed to send message. Please try again.');
+      console.log('[Outgoing] Send to partner error:', err?.message || err);
+      const msg = err?.message?.includes('storage')
+        ? 'Storage permission error. Check Firebase Storage rules.'
+        : 'Failed to send message. Please try again.';
+      Alert.alert('Error', msg);
     } finally {
       setIsSendingToPartner(false);
     }
