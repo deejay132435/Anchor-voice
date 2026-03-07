@@ -369,7 +369,7 @@ const styles = StyleSheet.create({
   },
   groundingText: {
     fontSize: 18,
-    color: '#9b59b6',
+    color: '#f1c40f',
     fontWeight: '500',
     textAlign: 'center',
     marginBottom: 16,

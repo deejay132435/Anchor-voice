@@ -59,19 +59,19 @@ export default function RootLayout() {
       <Stack
         screenOptions={{
           headerStyle: {
-            backgroundColor: '#1a0a1f',
+            backgroundColor: '#0a0a0a',
           },
-          headerTintColor: '#fff',
+          headerTintColor: '#f1c40f',
           headerTitleStyle: {
             fontWeight: '600',
+            color: '#fff',
           },
         }}
       >
         <Stack.Screen
           name="index"
           options={{
-            title: 'Anchor',
-            headerShown: true,
+            headerShown: false,
           }}
         />
         <Stack.Screen

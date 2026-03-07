@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   StatusBar,
+  ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -74,7 +75,7 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
 
-      <View style={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} bounces={false}>
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.iconContainer}>
@@ -82,12 +83,12 @@ export default function HomeScreen() {
           </View>
           <Text style={styles.title}>Anchor</Text>
           <Text style={styles.subtitle}>
-            Stay steady.{'\n'}You{"'"}re in control.
+            Stay steady. You{"'"}re in control.
           </Text>
           {/* Pairing Status */}
-          <View style={styles.statusContainer}>
+          <View style={[styles.statusContainer, isPaired && styles.statusContainerConnected]}>
             <View style={[styles.statusDot, isPaired ? styles.statusConnected : styles.statusDisconnected]} />
-            <Text style={styles.statusText}>
+            <Text style={[styles.statusText, isPaired && styles.statusTextConnected]}>
               {isPaired ? 'Connected' : 'Not connected'}
             </Text>
           </View>
@@ -101,7 +102,7 @@ export default function HomeScreen() {
             activeOpacity={0.8}
           >
             <View style={styles.buttonContent}>
-              <Ionicons name="mic" size={32} color="#fff" />
+              <Ionicons name="mic" size={28} color="#fff" />
               <Text style={styles.buttonTitle}>Prepare a Voice Message</Text>
               <Text style={styles.buttonDescription}>
                 Record and review before sending
@@ -115,8 +116,11 @@ export default function HomeScreen() {
             activeOpacity={0.8}
           >
             <View style={styles.buttonContent}>
-              <Ionicons name="download" size={32} color="#fff" />
+              <Ionicons name="download" size={28} color="#fff" />
               <Text style={styles.buttonTitle}>Listen to a Voice Message</Text>
+              <Text style={styles.buttonDescription}>
+                Prepare yourself before listening
+              </Text>
             </View>
           </TouchableOpacity>
 
@@ -129,7 +133,7 @@ export default function HomeScreen() {
             >
               <View style={styles.buttonContent}>
                 <View style={styles.messagesIconContainer}>
-                  <Ionicons name="chatbubbles" size={28} color="#fff" />
+                  <Ionicons name="chatbubbles" size={24} color="#f1c40f" />
                   {unreadCount > 0 && (
                     <View style={styles.unreadBadge}>
                       <Text style={styles.unreadText}>{unreadCount}</Text>
@@ -149,7 +153,7 @@ export default function HomeScreen() {
               activeOpacity={0.8}
             >
               <View style={styles.buttonContent}>
-                <Ionicons name="people" size={28} color="#fff" />
+                <Ionicons name="people" size={24} color="#f1c40f" />
                 <Text style={styles.buttonTitle}>Connect with Partner</Text>
                 <Text style={styles.buttonDescription}>
                   Pair to send in-app voice messages
@@ -159,9 +163,9 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* Footer */}
-        <View style={styles.footer} />
-      </View>
+        {/* Footer tagline */}
+        <Text style={styles.footerText}>Your voice. Your pace.</Text>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -172,49 +176,53 @@ const styles = StyleSheet.create({
     backgroundColor: '#0a0a0a',
   },
   content: {
-    flex: 1,
-    padding: 24,
+    flexGrow: 1,
+    padding: 20,
+    paddingBottom: 32,
   },
   header: {
     alignItems: 'center',
-    marginTop: 16,
-    marginBottom: 24,
+    marginTop: 8,
+    marginBottom: 20,
   },
   iconContainer: {
-    width: 60,
-    height: 60,
+    width: 48,
+    height: 48,
     justifyContent: 'center',
     alignItems: 'center',
   },
   verticalLine: {
     width: 4,
-    height: 48,
-    backgroundColor: '#9b59b6',
+    height: 36,
+    backgroundColor: '#f1c40f',
     borderRadius: 2,
   },
   title: {
-    fontSize: 36,
+    fontSize: 32,
     fontWeight: '700',
     color: '#fff',
-    marginTop: 16,
+    marginTop: 10,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#a0a0b0',
     textAlign: 'center',
-    marginTop: 12,
-    paddingHorizontal: 32,
-    lineHeight: 24,
+    marginTop: 8,
   },
   statusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 12,
+    marginTop: 10,
     paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingVertical: 5,
     backgroundColor: '#1a1a2e',
     borderRadius: 20,
+  },
+  statusContainerConnected: {
+    backgroundColor: '#0a1f0a',
+    borderWidth: 1,
+    borderColor: '#27ae6040',
   },
   statusDot: {
     width: 8,
@@ -231,14 +239,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#a0a0b0',
   },
+  statusTextConnected: {
+    color: '#27ae60',
+  },
   actionsContainer: {
-    flex: 1,
     gap: 12,
   },
   actionButton: {
     borderRadius: 16,
-    padding: 20,
-    minHeight: 100,
+    padding: 18,
     justifyContent: 'center',
   },
   primaryButton: {
@@ -250,26 +259,26 @@ const styles = StyleSheet.create({
   messagesButton: {
     backgroundColor: '#1a0a2e',
     borderWidth: 1.5,
-    borderColor: '#9b59b6',
+    borderColor: '#f1c40f50',
   },
   pairButton: {
     backgroundColor: '#1a1a2e',
     borderWidth: 1.5,
-    borderColor: '#333',
+    borderColor: '#f1c40f50',
   },
   buttonContent: {
     alignItems: 'center',
   },
   buttonTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '600',
     color: '#fff',
-    marginTop: 8,
+    marginTop: 6,
   },
   buttonDescription: {
-    fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.6)',
-    marginTop: 4,
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.5)',
+    marginTop: 3,
     textAlign: 'center',
   },
   messagesIconContainer: {
@@ -292,8 +301,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
-  footer: {
-    paddingVertical: 16,
-    alignItems: 'center',
+  footerText: {
+    textAlign: 'center',
+    color: '#f1c40f60',
+    fontSize: 12,
+    marginTop: 20,
+    paddingBottom: 8,
   },
 });

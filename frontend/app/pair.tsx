@@ -229,7 +229,7 @@ export default function PairScreen() {
         )}
 
         <View style={styles.privacyNote}>
-          <Ionicons name="shield-checkmark-outline" size={18} color="#666" />
+          <Ionicons name="shield-checkmark-outline" size={18} color="#f1c40f" />
           <Text style={styles.privacyText}>
             No names, emails, or accounts needed. Your identity stays private.
           </Text>
@@ -316,7 +316,7 @@ const styles = StyleSheet.create({
   codeBox: {
     backgroundColor: '#1a0a2e',
     borderWidth: 2,
-    borderColor: '#9b59b6',
+    borderColor: '#f1c40f',
     borderRadius: 16,
     paddingVertical: 24,
     paddingHorizontal: 40,
@@ -325,7 +325,7 @@ const styles = StyleSheet.create({
   codeText: {
     fontSize: 40,
     fontWeight: '700',
-    color: '#fff',
+    color: '#f1c40f',
     letterSpacing: 8,
     fontFamily: 'monospace',
   },
