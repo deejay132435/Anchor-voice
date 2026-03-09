@@ -7,6 +7,9 @@ import {
   FlatList,
   ActivityIndicator,
   Alert,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -20,7 +23,10 @@ import {
   downloadVoiceMessage,
   markAsListened,
   getRecentMessages,
+  sendVoiceMessage,
 } from '../services/messagingService';
+import Constants from 'expo-constants';
+import * as FileSystem from 'expo-file-system/legacy';
 
 export default function MessagesScreen() {
   const router = useRouter();
@@ -29,6 +35,9 @@ export default function MessagesScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [ttsText, setTtsText] = useState('');
+  const [isSendingTts, setIsSendingTts] = useState(false);
+  const [showTtsInput, setShowTtsInput] = useState(false);
   const soundRef = useRef<Audio.Sound | null>(null);
   const flatListRef = useRef<FlatList>(null);
 
@@ -153,6 +162,75 @@ export default function MessagesScreen() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
+  const sendTtsMessage = async () => {
+    if (!ttsText.trim() || !pairId || !deviceId) return;
+
+    setIsSendingTts(true);
+    try {
+      const apiUrl = Constants.expoConfig?.extra?.apiUrl;
+      if (!apiUrl) throw new Error('API URL not configured');
+
+      // Call backend TTS endpoint
+      const response = await fetch(`${apiUrl}/api/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: ttsText.trim() }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || 'TTS failed');
+      }
+
+      // Download the audio file
+      const audioBlob = await response.blob();
+      const cacheDir = FileSystem.cacheDirectory || '';
+      const ttsPath = `${cacheDir}tts_${Date.now()}.mp3`;
+
+      // Convert blob to base64 and write to file
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onloadend = () => {
+          const base64 = (reader.result as string).split(',')[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(audioBlob);
+      });
+      const base64Data = await base64Promise;
+      await FileSystem.writeAsStringAsync(ttsPath, base64Data, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      // Get duration
+      let duration = 3;
+      try {
+        const { sound: tempSound } = await Audio.Sound.createAsync({ uri: ttsPath });
+        const status = await tempSound.getStatusAsync();
+        if (status.isLoaded && status.durationMillis) {
+          duration = Math.max(1, Math.round(status.durationMillis / 1000));
+        }
+        await tempSound.unloadAsync();
+      } catch {}
+
+      // Send as voice message
+      await sendVoiceMessage(pairId, deviceId, ttsPath, duration, {
+        severity_level: 'low',
+        primary_emotion: 'calm',
+        insights: ['Text-to-speech message'],
+      });
+
+      setTtsText('');
+      setShowTtsInput(false);
+      Alert.alert('Sent', 'Text message sent as voice.');
+    } catch (err: any) {
+      console.log('[Messages] TTS error:', err);
+      Alert.alert('Error', err.message || 'Failed to send text message.');
+    } finally {
+      setIsSendingTts(false);
+    }
+  };
+
   const renderMessage = ({ item }: { item: Message }) => {
     const isMine = item.sender === deviceId;
     const isPlaying = playingId === item.id;
@@ -238,7 +316,11 @@ export default function MessagesScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    >
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -258,11 +340,41 @@ export default function MessagesScreen() {
             <Ionicons name="chatbubbles-outline" size={64} color="#333" />
             <Text style={styles.emptyTitle}>No messages yet</Text>
             <Text style={styles.emptyText}>
-              Send a voice message to start the conversation.
+              Send a voice or text message to start the conversation.
             </Text>
           </View>
         }
       />
+
+      {/* TTS Input */}
+      {showTtsInput && (
+        <View style={styles.ttsContainer}>
+          <View style={styles.ttsInputRow}>
+            <TextInput
+              style={styles.ttsInput}
+              value={ttsText}
+              onChangeText={setTtsText}
+              placeholder="Type a message to send as voice..."
+              placeholderTextColor="#666"
+              multiline
+              maxLength={500}
+              autoFocus
+            />
+            <TouchableOpacity
+              style={[styles.ttsSendButton, (!ttsText.trim() || isSendingTts) && styles.ttsSendDisabled]}
+              onPress={sendTtsMessage}
+              disabled={!ttsText.trim() || isSendingTts}
+            >
+              {isSendingTts ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Ionicons name="send" size={20} color="#fff" />
+              )}
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.ttsHint}>Your text will be converted to a voice message</Text>
+        </View>
+      )}
 
       {/* Bottom Action Bar */}
       <View style={styles.bottomBar}>
@@ -273,8 +385,14 @@ export default function MessagesScreen() {
           <Ionicons name="mic" size={24} color="#fff" />
           <Text style={styles.recordButtonText}>Record & Send</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.ttsButton, showTtsInput && styles.ttsButtonActive]}
+          onPress={() => setShowTtsInput(!showTtsInput)}
+        >
+          <Ionicons name="text" size={22} color={showTtsInput ? '#0a0a0a' : '#f1c40f'} />
+        </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -417,17 +535,17 @@ const styles = StyleSheet.create({
     color: '#888',
   },
   bottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    flexDirection: 'row',
     padding: 16,
     paddingBottom: 32,
     backgroundColor: '#0a0a0a',
     borderTopWidth: 1,
     borderTopColor: '#1a1a2e',
+    gap: 10,
+    alignItems: 'center',
   },
   recordButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -440,5 +558,59 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '600',
     color: '#fff',
+  },
+  ttsButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 14,
+    backgroundColor: '#1a1a2e',
+    borderWidth: 1.5,
+    borderColor: '#f1c40f50',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  ttsButtonActive: {
+    backgroundColor: '#f1c40f',
+    borderColor: '#f1c40f',
+  },
+  ttsContainer: {
+    padding: 12,
+    backgroundColor: '#1a1a2e',
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+  },
+  ttsInputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 10,
+  },
+  ttsInput: {
+    flex: 1,
+    backgroundColor: '#0a0a0a',
+    borderRadius: 12,
+    padding: 12,
+    paddingTop: 12,
+    fontSize: 15,
+    color: '#fff',
+    maxHeight: 100,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  ttsSendButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#9b59b6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  ttsSendDisabled: {
+    opacity: 0.4,
+  },
+  ttsHint: {
+    fontSize: 11,
+    color: '#666',
+    marginTop: 6,
+    textAlign: 'center',
   },
 });

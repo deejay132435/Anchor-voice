@@ -9,6 +9,7 @@ from typing import Dict, Any, List, Optional
 
 import numpy as np
 from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi.responses import Response
 from starlette.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -637,6 +638,7 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
         severity_level = "high"
     elif word_signal_count >= 1 or audio_signal_count >= 2:
         severity_level = "medium"
+
     else:
         severity_level = "low"
 
@@ -864,6 +866,54 @@ async def debug_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
             },
         },
     }
+
+
+class TtsRequest(BaseModel):
+    text: str
+    voice: Optional[str] = "nova"  # OpenAI TTS voices: alloy, echo, fable, onyx, nova, shimmer
+
+
+@api.post("/tts")
+async def text_to_speech(req: TtsRequest):
+    """
+    Convert text to speech using OpenAI TTS API.
+    Returns MP3 audio data.
+    """
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
+
+    if len(req.text) > 500:
+        raise HTTPException(status_code=400, detail="Text must be 500 characters or less")
+
+    if not OPENAI_AVAILABLE:
+        raise HTTPException(status_code=503, detail="TTS service not available")
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="TTS service not configured")
+
+    try:
+        client = openai.OpenAI(api_key=api_key)
+        response = client.audio.speech.create(
+            model="tts-1",
+            voice=req.voice,
+            input=req.text.strip(),
+            response_format="mp3",
+        )
+
+        audio_data = response.content
+        return Response(
+            content=audio_data,
+            media_type="audio/mpeg",
+            headers={"Content-Disposition": "attachment; filename=tts.mp3"},
+        )
+
+    except openai.APIError as e:
+        print(f"OpenAI TTS API error: {e}")
+        raise HTTPException(status_code=502, detail="TTS generation failed")
+    except Exception as e:
+        print(f"TTS error: {e}")
+        raise HTTPException(status_code=500, detail="TTS generation failed")
 
 
 app.include_router(api)

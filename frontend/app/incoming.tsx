@@ -15,8 +15,9 @@ import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { analyzeAudio, AudioAnalysisResponse } from '../services/apiService';
-import { downloadVoiceMessage, markAsListened } from '../services/messagingService';
+import { downloadVoiceMessage, markAsListened, getRecentMessages, Message } from '../services/messagingService';
 import { getOrCreateDeviceId } from '../services/deviceService';
+import { getPairInfo } from '../services/pairingService';
 
 export default function IncomingScreen() {
   const router = useRouter();
@@ -36,6 +37,11 @@ export default function IncomingScreen() {
   const inAppAudioUrl = params.audioUrl as string | undefined;
   const isInAppMessage = !!(inAppMessageId && inAppPairId && inAppAudioUrl);
 
+  // Received in-app messages
+  const [receivedMessages, setReceivedMessages] = useState<Message[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [deviceId, setDeviceId] = useState<string>('');
+
   useEffect(() => {
     // Handle in-app message
     if (isInAppMessage) {
@@ -51,12 +57,77 @@ export default function IncomingScreen() {
       analyzeIncomingAudio(params.sharedUri);
     }
 
+    // Load received in-app messages
+    loadReceivedMessages();
+
     return () => {
       if (sound) {
         sound.unloadAsync();
       }
     };
   }, [params.sharedUri, inAppMessageId]);
+
+  const loadReceivedMessages = async () => {
+    try {
+      setLoadingMessages(true);
+      const id = await getOrCreateDeviceId();
+      setDeviceId(id);
+      const pair = await getPairInfo(id);
+      if (!pair) return;
+
+      const messages = await getRecentMessages(pair.pairId);
+      // Filter: only received, not deleted, not yet listened by receiver
+      const unlistened = messages.filter(
+        (m) => m.sender !== id && !m.deleted && !m.listenedByReceiver
+      );
+      setReceivedMessages(unlistened);
+    } catch (err) {
+      console.log('[Incoming] Load messages error:', err);
+    } finally {
+      setLoadingMessages(false);
+    }
+  };
+
+  const openReceivedMessage = (msg: Message) => {
+    // Load this message for analysis
+    setAudioUri(null);
+    setInsights([]);
+    setExamplePhrasing('');
+    setHasAnalyzed(false);
+
+    // Use the in-app message flow
+    const loadMsg = async () => {
+      try {
+        setIsAnalyzing(true);
+        const localUri = await downloadVoiceMessage(msg.audioUrl, msg.id);
+        setAudioUri(localUri);
+        await analyzeIncomingAudio(localUri);
+
+        // Mark as listened after analysis
+        const pair = await getPairInfo(deviceId);
+        if (pair) {
+          await markAsListened(pair.pairId, msg.id, deviceId);
+          // Remove from list
+          setReceivedMessages((prev) => prev.filter((m) => m.id !== msg.id));
+        }
+      } catch (err) {
+        console.log('[Incoming] Message load error:', err);
+        Alert.alert('Error', 'Could not load message.');
+        setIsAnalyzing(false);
+      }
+    };
+    loadMsg();
+  };
+
+  const formatTime = (timestamp: number) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+    if (isToday) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
 
   const loadInAppMessage = async () => {
     if (!inAppAudioUrl || !inAppMessageId) return;
@@ -209,6 +280,46 @@ export default function IncomingScreen() {
             <Text style={styles.instructionText}>
               Select a voice message to prepare yourself before listening.
             </Text>
+          </View>
+        )}
+
+        {/* Received In-App Messages */}
+        {!audioUri && receivedMessages.length > 0 && (
+          <View style={styles.receivedSection}>
+            <Text style={styles.receivedTitle}>
+              <Ionicons name="mail-unread" size={16} color="#f1c40f" /> New from Partner
+            </Text>
+            {receivedMessages.map((msg) => (
+              <TouchableOpacity
+                key={msg.id}
+                style={styles.receivedCard}
+                onPress={() => openReceivedMessage(msg)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.receivedCardLeft}>
+                  <Ionicons name="volume-medium" size={22} color="#9b59b6" />
+                </View>
+                <View style={styles.receivedCardContent}>
+                  <Text style={styles.receivedCardLabel}>Voice message from partner</Text>
+                  <Text style={styles.receivedCardMeta}>
+                    {Math.floor(msg.audioDurationSeconds / 60)}:{Math.round(msg.audioDurationSeconds % 60).toString().padStart(2, '0')} · {formatTime(msg.timestamp)}
+                  </Text>
+                  <View style={styles.receivedBadges}>
+                    <View style={[styles.receivedBadge, { backgroundColor: msg.analysisSummary.severity_level === 'high' ? '#e74c3c30' : msg.analysisSummary.severity_level === 'medium' ? '#f39c1230' : '#27ae6030' }]}>
+                      <Text style={[styles.receivedBadgeText, { color: msg.analysisSummary.severity_level === 'high' ? '#e74c3c' : msg.analysisSummary.severity_level === 'medium' ? '#f39c12' : '#27ae60' }]}>
+                        {msg.analysisSummary.severity_level}
+                      </Text>
+                    </View>
+                    <View style={[styles.receivedBadge, { backgroundColor: '#9b59b630' }]}>
+                      <Text style={[styles.receivedBadgeText, { color: '#9b59b6' }]}>
+                        {msg.analysisSummary.primary_emotion}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#666" />
+              </TouchableOpacity>
+            ))}
           </View>
         )}
 
@@ -576,5 +687,61 @@ const styles = StyleSheet.create({
   flaggedWords: {
     fontSize: 12,
     color: '#a0a0b0',
+  },
+  receivedSection: {
+    marginBottom: 20,
+  },
+  receivedTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#f1c40f',
+    marginBottom: 12,
+  },
+  receivedCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a0a2e',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#9b59b630',
+  },
+  receivedCardLeft: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#9b59b620',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  receivedCardContent: {
+    flex: 1,
+    gap: 3,
+  },
+  receivedCardLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  receivedCardMeta: {
+    fontSize: 12,
+    color: '#888',
+  },
+  receivedBadges: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 4,
+  },
+  receivedBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  receivedBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'capitalize',
   },
 });

@@ -6,13 +6,14 @@ import {
   TouchableOpacity,
   StatusBar,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { getOrCreateDeviceId } from '../services/deviceService';
-import { getPairInfo } from '../services/pairingService';
+import { getPairInfo, unpair } from '../services/pairingService';
 import { ref, onValue } from 'firebase/database';
 import { database } from '../services/firebaseConfig';
 
@@ -71,6 +72,31 @@ export default function HomeScreen() {
     }, [])
   );
 
+  const handleDisconnect = () => {
+    Alert.alert(
+      'Disconnect Partner',
+      'This will remove the pairing. You won\'t be able to send or receive in-app messages until you pair again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const deviceId = await getOrCreateDeviceId();
+              await unpair(deviceId);
+              setIsPaired(false);
+              setPairId(null);
+              setUnreadCount(0);
+            } catch (err) {
+              Alert.alert('Error', 'Failed to disconnect. Try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
@@ -85,13 +111,21 @@ export default function HomeScreen() {
           <Text style={styles.subtitle}>
             Stay steady. You{"'"}re in control.
           </Text>
-          {/* Pairing Status */}
-          <View style={[styles.statusContainer, isPaired && styles.statusContainerConnected]}>
-            <View style={[styles.statusDot, isPaired ? styles.statusConnected : styles.statusDisconnected]} />
-            <Text style={[styles.statusText, isPaired && styles.statusTextConnected]}>
-              {isPaired ? 'Connected' : 'Not connected'}
-            </Text>
-          </View>
+          {/* Pairing Status — tap to disconnect when paired */}
+          <TouchableOpacity
+            onPress={isPaired ? handleDisconnect : undefined}
+            activeOpacity={isPaired ? 0.7 : 1}
+          >
+            <View style={[styles.statusContainer, isPaired && styles.statusContainerConnected]}>
+              <View style={[styles.statusDot, isPaired ? styles.statusConnected : styles.statusDisconnected]} />
+              <Text style={[styles.statusText, isPaired && styles.statusTextConnected]}>
+                {isPaired ? 'Connected' : 'Not connected'}
+              </Text>
+              {isPaired && (
+                <Ionicons name="close-circle-outline" size={16} color="#27ae60" style={{ marginLeft: 2 }} />
+              )}
+            </View>
+          </TouchableOpacity>
         </View>
 
         {/* Main Action Buttons */}
@@ -105,7 +139,7 @@ export default function HomeScreen() {
               <Ionicons name="mic" size={28} color="#fff" />
               <Text style={styles.buttonTitle}>Prepare a Voice Message</Text>
               <Text style={styles.buttonDescription}>
-                Record and review before sending
+                Record, review, send to partner or via...
               </Text>
             </View>
           </TouchableOpacity>
@@ -119,7 +153,7 @@ export default function HomeScreen() {
               <Ionicons name="download" size={28} color="#fff" />
               <Text style={styles.buttonTitle}>Listen to a Voice Message</Text>
               <Text style={styles.buttonDescription}>
-                Prepare yourself before listening
+                Received messages or select a file
               </Text>
             </View>
           </TouchableOpacity>
@@ -142,7 +176,7 @@ export default function HomeScreen() {
                 </View>
                 <Text style={styles.buttonTitle}>Messages</Text>
                 <Text style={styles.buttonDescription}>
-                  Voice messages with your partner
+                  Voice &amp; text-to-speech with partner
                 </Text>
               </View>
             </TouchableOpacity>

@@ -77,7 +77,11 @@ export default function PairScreen() {
         ]);
       });
     } catch (err: any) {
-      setError(err.message || 'Failed to create code');
+      if (err.message === 'FREE_LIMIT_REACHED') {
+        setError('You\'ve already used your free pairing. Subscribe to connect with a new partner.');
+      } else {
+        setError(err.message || 'Failed to create code');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -99,6 +103,8 @@ export default function PairScreen() {
         Alert.alert('Connected!', 'You are now paired with your partner.', [
           { text: 'OK', onPress: () => router.back() },
         ]);
+      } else if (result.error === 'FREE_LIMIT_REACHED') {
+        setError('You\'ve already used your free pairing. Subscribe to connect with a new partner.');
       } else {
         setError(result.error || 'Failed to connect');
       }

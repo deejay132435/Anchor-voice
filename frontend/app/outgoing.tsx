@@ -516,26 +516,25 @@ export default function OutgoingScreen() {
               </TouchableOpacity>
             )}
 
-            <View style={styles.actionButtons}>
-              <TouchableOpacity
-                style={[styles.actionButton, styles.rerecordButton]}
-                onPress={() => {
-                  setRecordedUri(null);
-                  setAnalysisResults(null);
-                  // DO NOT clear suggestions - keep them visible for reference during re-record
-                }}
-              >
-                <Text style={styles.actionButtonText}>Re-record</Text>
-              </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButtonFull, styles.shareButton]}
+              onPress={shareRecording}
+            >
+              <Ionicons name="share-outline" size={20} color="#fff" />
+              <Text style={styles.actionButtonText}>Send via...</Text>
+            </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.actionButton, styles.sendButton]}
-                onPress={shareRecording}
-              >
-                <Ionicons name="share" size={20} color="#fff" />
-                <Text style={styles.actionButtonText}>Share</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={[styles.actionButtonFull, styles.rerecordButton]}
+              onPress={() => {
+                setRecordedUri(null);
+                setAnalysisResults(null);
+                // DO NOT clear suggestions - keep them visible for reference during re-record
+              }}
+            >
+              <Ionicons name="refresh" size={20} color="#fff" />
+              <Text style={styles.actionButtonText}>Re-record</Text>
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
@@ -710,19 +709,6 @@ const styles = StyleSheet.create({
     gap: 12,
     marginTop: 8,
   },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    borderRadius: 12,
-    gap: 6,
-  },
   actionButtonFull: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -731,14 +717,16 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 8,
   },
-  rerecordButton: {
-    backgroundColor: '#6c3483',
-  },
-  sendButton: {
-    backgroundColor: '#27ae60',
-  },
   partnerSendButton: {
     backgroundColor: '#9b59b6',
+  },
+  shareButton: {
+    backgroundColor: '#27ae60',
+  },
+  rerecordButton: {
+    backgroundColor: '#1a1a2e',
+    borderWidth: 1,
+    borderColor: '#333',
   },
   actionButtonText: {
     fontSize: 14,

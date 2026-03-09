@@ -1,6 +1,8 @@
 import { ref, set, get, push, onValue } from 'firebase/database';
 import { database } from './firebaseConfig';
-import { updateDevicePairId } from './deviceService';
+import { updateDevicePairId, incrementPairCount, getPairCount } from './deviceService';
+
+const MAX_FREE_PAIRINGS = 1;
 
 export interface PairInfo {
   pairId: string;
@@ -26,6 +28,12 @@ export async function createPairingCode(deviceId: string): Promise<string> {
   const existingPair = await getPairInfo(deviceId);
   if (existingPair) {
     throw new Error('Already paired. Unpair first to create a new code.');
+  }
+
+  // Check if device has exceeded free pairing limit
+  const pairCount = await getPairCount(deviceId);
+  if (pairCount >= MAX_FREE_PAIRINGS) {
+    throw new Error('FREE_LIMIT_REACHED');
   }
 
   // Generate a unique code
@@ -98,6 +106,12 @@ export async function redeemPairingCode(
     return { success: false, error: 'You are already paired. Unpair first.' };
   }
 
+  // Check if device has exceeded free pairing limit
+  const pairCount = await getPairCount(deviceId);
+  if (pairCount >= MAX_FREE_PAIRINGS) {
+    return { success: false, error: 'FREE_LIMIT_REACHED' };
+  }
+
   // Create the pair
   const pairsRef = ref(database, 'pairs');
   const newPairRef = push(pairsRef);
@@ -120,6 +134,10 @@ export async function redeemPairingCode(
   // Update both devices with the pair ID
   await updateDevicePairId(data.created_by, pairId);
   await updateDevicePairId(deviceId, pairId);
+
+  // Increment pair count for both devices
+  await incrementPairCount(data.created_by);
+  await incrementPairCount(deviceId);
 
   return { success: true, pairId };
 }

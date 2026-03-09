@@ -44,6 +44,21 @@ export async function updateDevicePairId(
   await set(deviceRef, pairId);
 }
 
+/** Increment the pair_count for a device (tracks total pairings) */
+export async function incrementPairCount(deviceId: string): Promise<void> {
+  const countRef = ref(database, `devices/${deviceId}/pair_count`);
+  const snapshot = await get(countRef);
+  const current = snapshot.exists() ? snapshot.val() : 0;
+  await set(countRef, current + 1);
+}
+
+/** Get the pair count for a device */
+export async function getPairCount(deviceId: string): Promise<number> {
+  const countRef = ref(database, `devices/${deviceId}/pair_count`);
+  const snapshot = await get(countRef);
+  return snapshot.exists() ? snapshot.val() : 0;
+}
+
 /** Get the pair ID for a device */
 export async function getDevicePairId(deviceId: string): Promise<string | null> {
   const deviceRef = ref(database, `devices/${deviceId}/pair_id`);

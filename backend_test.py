@@ -12,8 +12,8 @@ import sys
 from typing import Dict, Any
 import time
 
-# Get backend URL from frontend .env
-BACKEND_URL = "https://anchor-voice.preview.emergentagent.com/api"
+# Backend URL - defaults to local dev server
+BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8001/api")
 
 class BackendTester:
     def __init__(self):
