@@ -145,6 +145,35 @@ export const fixGrammar = async (text: string): Promise<GrammarFixResponse> => {
   return response.json();
 };
 
+export const generateTts = async (text: string, voice: string = 'nova'): Promise<string> => {
+  const response = await fetchWithTimeout(`${API_URL}/api/tts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: text.trim(), voice, format: 'base64' }),
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.detail || `TTS generation failed (${response.status})`);
+  }
+
+  const data = await response.json();
+  if (!data.audio_base64) {
+    throw new Error('No audio data received from TTS');
+  }
+
+  // Write base64 audio to cache file
+  const FileSystem = require('expo-file-system/legacy');
+  const cacheDir = FileSystem.cacheDirectory || '';
+  const ttsPath = `${cacheDir}tts_${Date.now()}.mp3`;
+
+  await FileSystem.writeAsStringAsync(ttsPath, data.audio_base64, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+
+  return ttsPath;
+};
+
 export const generateSuggestions = async (
   analysisResults: AudioAnalysisResponse,
   messageType: 'outgoing' | 'incoming'

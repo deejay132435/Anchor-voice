@@ -979,13 +979,14 @@ Text: {req.text.strip()}"""}]
 class TtsRequest(BaseModel):
     text: str
     voice: Optional[str] = "nova"  # OpenAI TTS voices: alloy, echo, fable, onyx, nova, shimmer
+    format: Optional[str] = "base64"  # "base64" (JSON) or "binary" (raw audio)
 
 
 @api.post("/tts")
 async def text_to_speech(req: TtsRequest):
     """
     Convert text to speech using OpenAI TTS API.
-    Returns MP3 audio data.
+    Returns base64-encoded MP3 in JSON (default) or raw binary audio.
     """
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
@@ -1010,11 +1011,21 @@ async def text_to_speech(req: TtsRequest):
         )
 
         audio_data = response.content
-        return Response(
-            content=audio_data,
-            media_type="audio/mpeg",
-            headers={"Content-Disposition": "attachment; filename=tts.mp3"},
-        )
+
+        if req.format == "binary":
+            return Response(
+                content=audio_data,
+                media_type="audio/mpeg",
+                headers={"Content-Disposition": "attachment; filename=tts.mp3"},
+            )
+
+        # Default: return base64 JSON (works reliably with React Native)
+        audio_base64 = base64.b64encode(audio_data).decode("utf-8")
+        return {
+            "audio_base64": audio_base64,
+            "format": "mp3",
+            "size_bytes": len(audio_data),
+        }
 
     except openai.APIError as e:
         print(f"OpenAI TTS API error: {e}")

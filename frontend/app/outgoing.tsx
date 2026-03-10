@@ -15,8 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import Constants from 'expo-constants';
-import { analyzeAudio, AudioAnalysisResponse, fixGrammar } from '../services/apiService';
+import { analyzeAudio, AudioAnalysisResponse, fixGrammar, generateTts } from '../services/apiService';
 import { getOrCreateDeviceId } from '../services/deviceService';
 import { getPairInfo } from '../services/pairingService';
 import { sendVoiceMessage } from '../services/messagingService';
@@ -189,38 +188,7 @@ export default function OutgoingScreen() {
     if (!ttsText.trim()) return;
     setIsGeneratingTts(true);
     try {
-      const apiUrl = Constants.expoConfig?.extra?.apiUrl;
-      if (!apiUrl) throw new Error('API URL not configured');
-
-      const response = await fetch(`${apiUrl}/api/tts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: ttsText.trim() }),
-      });
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || 'TTS failed');
-      }
-
-      const audioBlob = await response.blob();
-      const cacheDir = FileSystem.cacheDirectory || '';
-      const ttsPath = `${cacheDir}tts_${Date.now()}.mp3`;
-
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve, reject) => {
-        reader.onloadend = () => {
-          const base64 = (reader.result as string).split(',')[1];
-          resolve(base64);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(audioBlob);
-      });
-      const base64Data = await base64Promise;
-      await FileSystem.writeAsStringAsync(ttsPath, base64Data, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
+      const ttsPath = await generateTts(ttsText.trim());
       setTtsAudioUri(ttsPath);
 
       // Analyze the generated audio
