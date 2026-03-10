@@ -117,6 +117,16 @@ POSITIVE_PATTERNS = {
         r"\b(congratulations|congrats|well\s+done|good\s+job|great\s+news|finally|we\s+made\s+it|let's\s+go)\b",
         r"\b(cheers|hooray|woohoo|yay|yes|woo)\b",
     ],
+    "apology": [
+        r"\b(i('m)?\s+sorry|my\s+bad|i\s+apologize|forgive\s+me|i\s+was\s+wrong|my\s+fault)\b",
+        r"\b(you('re|r)?\s+right|i\s+shouldn't\s+have|i\s+didn't\s+mean|that\s+was\s+wrong\s+of\s+me)\b",
+        r"\b(i\s+take\s+it\s+back|i\s+regret|i\s+feel\s+bad|i\s+messed\s+up|i\s+screwed\s+up)\b",
+    ],
+    "reassurance": [
+        r"\b(it('s)?\s+okay|it('s)?\s+alright|don't\s+worry|no\s+worries|we('re)?\s+good|we('re)?\s+okay)\b",
+        r"\b(i\s+understand|i\s+hear\s+you|that\s+makes\s+sense|you('re)?\s+right|fair\s+enough)\b",
+        r"\b(let('s)?\s+work\s+(this|it)\s+out|let('s)?\s+talk|i('m)?\s+here\s+for\s+you|i\s+support\s+you)\b",
+    ],
 }
 
 
@@ -532,6 +542,8 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
     has_excitement = "excitement" in positive_words
     has_gratitude = "gratitude" in positive_words
     has_celebration = "celebration" in positive_words
+    has_apology = "apology" in positive_words
+    has_reassurance = "reassurance" in positive_words
 
     # Detect escalating language from transcription
     contains_profanity = "profanity" in escalation_words
@@ -580,7 +592,13 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
 
     if has_positive and not word_escalation:
         # Positive content with high energy = excitement/happiness, not anger
-        if has_excitement or has_celebration:
+        if has_apology:
+            emotion_result["primary_emotion"] = "apologetic"
+            emotion_result["confidence"] = 0.7
+        elif has_reassurance:
+            emotion_result["primary_emotion"] = "supportive"
+            emotion_result["confidence"] = 0.6
+        elif has_excitement or has_celebration:
             emotion_result["primary_emotion"] = "excited"
             emotion_result["confidence"] = 0.7
         elif has_affection:
@@ -647,6 +665,10 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
 
     if has_positive and not word_escalation:
         # Positive message insights
+        if has_apology:
+            insights.append("Apology detected - taking accountability")
+        if has_reassurance:
+            insights.append("Reassurance detected - supportive tone")
         if has_excitement or has_celebration:
             insights.append("Excitement detected - positive energy!")
         if has_affection:
@@ -711,6 +733,8 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
         "excitement": "Excitement",
         "gratitude": "Gratitude",
         "celebration": "Celebration",
+        "apology": "Apology",
+        "reassurance": "Reassurance",
     }
     detection_summary = {}
     for category, words in escalation_words.items():
@@ -743,7 +767,10 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
     # This saves a full network round trip (2-5 seconds)
     if req.message_type:
         suggestions = await _generate_suggestions_internal(
-            raised_voice, fast_pacing, emotional_charge, req.message_type
+            raised_voice, fast_pacing, emotional_charge, req.message_type,
+            emotion=emotion_result.get("primary_emotion", "calm"),
+            has_positive=has_positive,
+            has_apology=has_apology,
         )
         result["suggestions"] = suggestions
 
@@ -751,10 +778,13 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
 
 
 async def _generate_suggestions_internal(
-    raised_voice: bool, fast_pacing: bool, emotional_charge: bool, message_type: str
+    raised_voice: bool, fast_pacing: bool, emotional_charge: bool, message_type: str,
+    emotion: str = "calm", has_positive: bool = False, has_apology: bool = False,
 ) -> List[str]:
     """
-    Internal: generate 3 de-escalation suggestions using Claude AI.
+    Internal: generate 3 suggestions using Claude AI.
+    For heated messages: de-escalation suggestions.
+    For positive/calm messages: affirming suggestions.
     Returns list of suggestion strings.
     """
     message_type = message_type.lower()
@@ -767,11 +797,41 @@ async def _generate_suggestions_internal(
         signals.append("emotional charge")
 
     is_heated = any([raised_voice, fast_pacing, emotional_charge])
+    is_positive = has_positive or emotion in ["apologetic", "supportive", "excited", "affectionate", "grateful", "calm"]
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if CLAUDE_AVAILABLE and api_key:
         try:
-            if message_type == "outgoing":
+            if is_positive and not is_heated:
+                # Positive/calm message — give affirming suggestions
+                if message_type == "outgoing":
+                    if has_apology:
+                        prompt = """You are helping someone send a sincere apology voice message.
+Their message contains an apology and sounds genuine.
+
+Generate exactly 3 short, warm ways they could phrase their apology effectively.
+Each phrase should be 1-2 sentences max. Focus on sincerity and taking accountability.
+Return only the 3 phrases, one per line, no numbering or bullets."""
+                    else:
+                        prompt = f"""You are helping someone send a positive voice message. The tone is {emotion}.
+
+Generate exactly 3 short, warm phrases they could say that match this positive tone.
+Each phrase should be 1-2 sentences max. Keep them natural and authentic.
+Return only the 3 phrases, one per line, no numbering or bullets."""
+                else:
+                    if has_apology:
+                        prompt = """You are helping someone respond to a sincere apology they received.
+
+Generate exactly 3 short, gracious response phrases they could use to accept the apology.
+Each phrase should be 1-2 sentences max. Focus on acceptance and moving forward.
+Return only the 3 phrases, one per line, no numbering or bullets."""
+                    else:
+                        prompt = f"""You are helping someone respond to a positive voice message. The tone is {emotion}.
+
+Generate exactly 3 short, warm response phrases that match the positive energy.
+Each phrase should be 1-2 sentences max. Keep them natural and authentic.
+Return only the 3 phrases, one per line, no numbering or bullets."""
+            elif message_type == "outgoing":
                 prompt = f"""You are helping someone de-escalate a conflict. They are about to send a voice message.
 Analysis shows: {', '.join(signals) if signals else 'calm tone'}.
 {'The message seems heated.' if is_heated else 'The message seems calm.'}
@@ -866,6 +926,54 @@ async def debug_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
             },
         },
     }
+
+
+class FixGrammarRequest(BaseModel):
+    text: str
+
+
+@api.post("/fix-grammar")
+async def fix_grammar(req: FixGrammarRequest) -> Dict[str, Any]:
+    """
+    Fix grammar and spelling in text while preserving the speaker's voice and intent.
+    Uses Claude to correct grammar without changing tone or meaning.
+    """
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
+
+    if len(req.text) > 500:
+        raise HTTPException(status_code=400, detail="Text must be 500 characters or less")
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not CLAUDE_AVAILABLE or not api_key:
+        # Fallback: return original text if Claude unavailable
+        return {"original": req.text, "corrected": req.text, "changed": False}
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=600,
+            messages=[{"role": "user", "content": f"""Fix the grammar and spelling in this text. Keep the same tone, meaning, and personality. Only fix errors - do not rewrite or rephrase. If the text is already correct, return it unchanged.
+
+Return ONLY the corrected text, nothing else.
+
+Text: {req.text.strip()}"""}]
+        )
+
+        corrected = response.content[0].text.strip()
+        # Remove quotes if Claude wrapped the response
+        if corrected.startswith('"') and corrected.endswith('"'):
+            corrected = corrected[1:-1]
+
+        return {
+            "original": req.text.strip(),
+            "corrected": corrected,
+            "changed": corrected.lower() != req.text.strip().lower(),
+        }
+    except Exception as e:
+        print(f"Grammar fix error: {e}")
+        return {"original": req.text, "corrected": req.text, "changed": False}
 
 
 class TtsRequest(BaseModel):

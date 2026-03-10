@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  TextInput,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,40 +15,61 @@ import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import { analyzeAudio, AudioAnalysisResponse } from '../services/apiService';
+import Constants from 'expo-constants';
+import { analyzeAudio, AudioAnalysisResponse, fixGrammar } from '../services/apiService';
 import { getOrCreateDeviceId } from '../services/deviceService';
 import { getPairInfo } from '../services/pairingService';
 import { sendVoiceMessage } from '../services/messagingService';
 
+type Mode = 'choose' | 'record' | 'tts';
+
 export default function OutgoingScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+
+  // Mode selection
+  const [mode, setMode] = useState<Mode>('choose');
+
+  // Recording state
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordedUri, setRecordedUri] = useState<string | null>(null);
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [analysisResults, setAnalysisResults] = useState<AudioAnalysisResponse | null>(null);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
 
-  // In-app messaging state
+  // TTS state
+  const [ttsText, setTtsText] = useState('');
+  const [correctedText, setCorrectedText] = useState<string | null>(null);
+  const [isFixingGrammar, setIsFixingGrammar] = useState(false);
+  const [ttsAudioUri, setTtsAudioUri] = useState<string | null>(null);
+  const [isGeneratingTts, setIsGeneratingTts] = useState(false);
+
+  // Playback
+  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  // Analysis
+  const [analysisResults, setAnalysisResults] = useState<AudioAnalysisResponse | null>(null);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [hasAnalyzed, setHasAnalyzed] = useState(false);
+
+  // Pairing
   const [isPaired, setIsPaired] = useState(false);
   const [pairId, setPairId] = useState<string | null>(null);
   const [deviceId, setDeviceId] = useState<string>('');
   const [isSendingToPartner, setIsSendingToPartner] = useState(false);
-  const sendMode = params.sendMode as string | undefined;
 
-  // Incoming context (from received message)
+  // Incoming context
   const [incomingInsights, setIncomingInsights] = useState<string[]>([]);
   const [incomingPhrasing, setIncomingPhrasing] = useState<string>('');
   const [showIncomingContext, setShowIncomingContext] = useState(true);
 
-  // Check pairing status on mount
   useEffect(() => {
-    const checkPairing = async () => {
+    const init = async () => {
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Microphone access is needed to record voice messages.');
+      }
       try {
         const id = await getOrCreateDeviceId();
         setDeviceId(id);
@@ -55,59 +77,37 @@ export default function OutgoingScreen() {
         setIsPaired(!!pair);
         setPairId(pair?.pairId || null);
       } catch (err) {
-        console.log('[Outgoing] Pairing check error:', err);
+        console.log('[Outgoing] Init error:', err);
       }
     };
-    checkPairing();
+    init();
+
+    return () => {
+      if (recording) recording.stopAndUnloadAsync();
+      if (sound) sound.unloadAsync();
+    };
   }, []);
 
   useEffect(() => {
-    // Check if we have incoming context from a received message
     if (params.incomingInsights && params.incomingPhrasing) {
       try {
-        const insights = JSON.parse(params.incomingInsights as string);
-        setIncomingInsights(insights);
+        setIncomingInsights(JSON.parse(params.incomingInsights as string));
         setIncomingPhrasing(params.incomingPhrasing as string);
         setShowIncomingContext(true);
-      } catch (error) {
-        console.error('Error parsing incoming context:', error);
-      }
+      } catch {}
     }
   }, [params]);
 
-  useEffect(() => {
-    // Request permissions on mount
-    (async () => {
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permission Required',
-          'Microphone access is needed to record voice messages.'
-        );
-      }
-    })();
+  // Get the active audio URI (recorded or TTS)
+  const activeAudioUri = recordedUri || ttsAudioUri;
 
-    return () => {
-      // Cleanup on unmount - clear suggestions when navigating away
-      setSuggestions([]);
-      setShowSuggestions(false);
-      
-      if (recording) {
-        recording.stopAndUnloadAsync();
-      }
-      if (sound) {
-        sound.unloadAsync();
-      }
-    };
-  }, []);
-
+  // ---- Recording ----
   const startRecording = async () => {
     try {
-      // Reset previous recording
       setRecordedUri(null);
       setAnalysisResults(null);
       setSuggestions([]);
-      setShowSuggestions(false);
+      setHasAnalyzed(false);
 
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
@@ -117,12 +117,11 @@ export default function OutgoingScreen() {
       const { recording: newRecording } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
-      
+
       setRecording(newRecording);
       setIsRecording(true);
       setRecordingDuration(0);
 
-      // Update duration every second
       const interval = setInterval(async () => {
         if (newRecording) {
           const status = await newRecording.getStatusAsync();
@@ -131,79 +130,142 @@ export default function OutgoingScreen() {
           }
         }
       }, 1000);
-
-      // Store interval ID for cleanup
       (newRecording as any).durationInterval = interval;
     } catch (err) {
       console.error('Failed to start recording', err);
-      Alert.alert('Error', 'Failed to start recording. Please try again.');
+      Alert.alert('Error', 'Failed to start recording.');
     }
   };
 
   const stopRecording = async () => {
     if (!recording) return;
-
     try {
       setIsRecording(false);
-      
-      // Clear duration interval
       if ((recording as any).durationInterval) {
         clearInterval((recording as any).durationInterval);
       }
-
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
       setRecordedUri(uri);
       setRecording(null);
 
-      // Automatically trigger audio analysis + suggestions
       if (uri) {
-        setIsLoadingSuggestions(true);
-
-        try {
-          // Read audio file and convert to base64
-          const base64Audio = await FileSystem.readAsStringAsync(uri, {
-            encoding: 'base64',
-          });
-
-          // Get actual audio duration from file
-          let actualDuration = recordingDuration || 1;
-          try {
-            const { sound: tempSound } = await Audio.Sound.createAsync({ uri });
-            const status = await tempSound.getStatusAsync();
-            if (status.isLoaded && status.durationMillis) {
-              actualDuration = Math.max(1, Math.round(status.durationMillis / 1000));
-            }
-            await tempSound.unloadAsync();
-          } catch (e) {
-            console.warn('Could not get exact duration, using recorded duration:', e);
-          }
-
-          // Single call: analyze audio AND generate suggestions together (faster)
-          const analysis = await analyzeAudio(base64Audio, actualDuration, 'outgoing');
-          setAnalysisResults(analysis);
-          setSuggestions(analysis.suggestions || ["I'm getting heated. I need to pause before this goes any further."]);
-          setShowSuggestions(true);
-
-        } catch (error) {
-          console.error('Error analyzing audio:', error);
-          setSuggestions(["I'm getting heated. I need to pause before this goes any further."]);
-          setShowSuggestions(true);
-        } finally {
-          setIsLoadingSuggestions(false);
-        }
+        await analyzeAudioFile(uri);
       }
     } catch (err) {
       console.error('Failed to stop recording', err);
-      setIsLoadingSuggestions(false);
-      Alert.alert('Error', 'Failed to stop recording.');
+      setIsAnalyzing(false);
     }
   };
 
+  // ---- TTS ----
+  const handleFixGrammar = async () => {
+    if (!ttsText.trim()) return;
+    setIsFixingGrammar(true);
+    try {
+      const result = await fixGrammar(ttsText.trim());
+      if (result.changed) {
+        setCorrectedText(result.corrected);
+      } else {
+        setCorrectedText(null);
+        Alert.alert('Looks good', 'No grammar corrections needed.');
+      }
+    } catch (err) {
+      console.error('Grammar fix error:', err);
+      Alert.alert('Error', 'Could not check grammar. Try again.');
+    } finally {
+      setIsFixingGrammar(false);
+    }
+  };
 
-  const playRecording = async () => {
-    if (!recordedUri) return;
+  const acceptCorrection = () => {
+    if (correctedText) {
+      setTtsText(correctedText);
+      setCorrectedText(null);
+    }
+  };
 
+  const generateTtsAudio = async () => {
+    if (!ttsText.trim()) return;
+    setIsGeneratingTts(true);
+    try {
+      const apiUrl = Constants.expoConfig?.extra?.apiUrl;
+      if (!apiUrl) throw new Error('API URL not configured');
+
+      const response = await fetch(`${apiUrl}/api/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: ttsText.trim() }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || 'TTS failed');
+      }
+
+      const audioBlob = await response.blob();
+      const cacheDir = FileSystem.cacheDirectory || '';
+      const ttsPath = `${cacheDir}tts_${Date.now()}.mp3`;
+
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onloadend = () => {
+          const base64 = (reader.result as string).split(',')[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(audioBlob);
+      });
+      const base64Data = await base64Promise;
+      await FileSystem.writeAsStringAsync(ttsPath, base64Data, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      setTtsAudioUri(ttsPath);
+
+      // Analyze the generated audio
+      await analyzeAudioFile(ttsPath);
+    } catch (err: any) {
+      console.error('TTS error:', err);
+      Alert.alert('Error', err.message || 'Failed to generate voice.');
+    } finally {
+      setIsGeneratingTts(false);
+    }
+  };
+
+  // ---- Shared analysis ----
+  const analyzeAudioFile = async (uri: string) => {
+    setIsAnalyzing(true);
+    setHasAnalyzed(false);
+    try {
+      const base64Audio = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+
+      let actualDuration = recordingDuration || 1;
+      try {
+        const { sound: tempSound } = await Audio.Sound.createAsync({ uri });
+        const status = await tempSound.getStatusAsync();
+        if (status.isLoaded && status.durationMillis) {
+          actualDuration = Math.max(1, Math.round(status.durationMillis / 1000));
+        }
+        await tempSound.unloadAsync();
+      } catch {}
+
+      const analysis = await analyzeAudio(base64Audio, actualDuration, 'outgoing');
+      setAnalysisResults(analysis);
+      setSuggestions(analysis.suggestions || []);
+      setHasAnalyzed(true);
+    } catch (error) {
+      console.error('Analysis error:', error);
+      setSuggestions(["Take a breath. You've got this."]);
+      setHasAnalyzed(true);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  // ---- Playback ----
+  const playAudio = async () => {
+    if (!activeAudioUri) return;
     try {
       if (isPlaying && sound) {
         await sound.stopAsync();
@@ -213,11 +275,15 @@ export default function OutgoingScreen() {
         return;
       }
 
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+      });
+
       const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: recordedUri },
+        { uri: activeAudioUri },
         { shouldPlay: true }
       );
-      
       setSound(newSound);
       setIsPlaying(true);
 
@@ -227,64 +293,68 @@ export default function OutgoingScreen() {
         }
       });
     } catch (error) {
-      console.error('Error playing recording:', error);
-      Alert.alert('Error', 'Failed to play recording.');
+      console.error('Playback error:', error);
+      Alert.alert('Error', 'Failed to play audio.');
     }
   };
 
-
-  const shareRecording = async () => {
-    if (!recordedUri) return;
-
-    try {
-      const canShare = await Sharing.isAvailableAsync();
-      if (!canShare) {
-        Alert.alert('Error', 'Sharing is not available on this device.');
-        return;
-      }
-
-      await Sharing.shareAsync(recordedUri);
-      
-      // Clear suggestions after successful send
-      setSuggestions([]);
-      setShowSuggestions(false);
-      
-      // After sharing, navigate back and clean up
-      setTimeout(() => {
-        router.back();
-      }, 1000);
-    } catch (error) {
-      console.error('Error sharing recording:', error);
-      Alert.alert('Error', 'Failed to share recording.');
-    }
-  };
-
+  // ---- Send ----
   const sendToPartner = async () => {
-    if (!recordedUri || !pairId || !deviceId) return;
-
+    if (!activeAudioUri || !pairId || !deviceId) return;
     setIsSendingToPartner(true);
     try {
-      const duration = recordingDuration || 1;
+      let duration = recordingDuration || 3;
+      try {
+        const { sound: tempSound } = await Audio.Sound.createAsync({ uri: activeAudioUri });
+        const status = await tempSound.getStatusAsync();
+        if (status.isLoaded && status.durationMillis) {
+          duration = Math.max(1, Math.round(status.durationMillis / 1000));
+        }
+        await tempSound.unloadAsync();
+      } catch {}
+
       const summary = {
         severity_level: analysisResults?.severity_level || 'low',
         primary_emotion: analysisResults?.emotion?.primary_emotion || 'calm',
         insights: analysisResults?.insights || [],
       };
 
-      await sendVoiceMessage(pairId, deviceId, recordedUri, duration, summary);
-
+      await sendVoiceMessage(pairId, deviceId, activeAudioUri, duration, summary);
       Alert.alert('Sent', 'Voice message sent to your partner.', [
         { text: 'OK', onPress: () => router.back() },
       ]);
     } catch (err: any) {
-      console.log('[Outgoing] Send to partner error:', err?.message || err);
-      const msg = err?.message?.includes('storage')
-        ? 'Storage permission error. Check Firebase Storage rules.'
-        : 'Failed to send message. Please try again.';
-      Alert.alert('Error', msg);
+      console.log('[Outgoing] Send error:', err?.message || err);
+      Alert.alert('Error', 'Failed to send message. Please try again.');
     } finally {
       setIsSendingToPartner(false);
     }
+  };
+
+  const shareRecording = async () => {
+    if (!activeAudioUri) return;
+    try {
+      const canShare = await Sharing.isAvailableAsync();
+      if (!canShare) {
+        Alert.alert('Error', 'Sharing is not available on this device.');
+        return;
+      }
+      await Sharing.shareAsync(activeAudioUri);
+      setTimeout(() => router.back(), 1000);
+    } catch (error) {
+      console.error('Share error:', error);
+    }
+  };
+
+  const resetAll = () => {
+    setRecordedUri(null);
+    setTtsAudioUri(null);
+    setAnalysisResults(null);
+    setSuggestions([]);
+    setHasAnalyzed(false);
+    setTtsText('');
+    setCorrectedText(null);
+    setMode('choose');
   };
 
   const formatDuration = (seconds: number) => {
@@ -293,197 +363,302 @@ export default function OutgoingScreen() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const isPositiveEmotion = (emotion: string) =>
+    ['calm', 'excited', 'affectionate', 'grateful', 'apologetic', 'supportive'].includes(emotion);
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Incoming Context Card (when responding to a received message) */}
+        {/* Incoming Context Card */}
         {incomingInsights.length > 0 && showIncomingContext && (
-          <View style={styles.incomingContextCard}>
-            <View style={styles.incomingHeader}>
+          <View style={styles.contextCard}>
+            <View style={styles.contextHeader}>
               <Ionicons name="chatbubble-ellipses" size={16} color="#9b59b6" />
-              <Text style={styles.incomingHeaderText}>Responding to received message</Text>
+              <Text style={styles.contextHeaderText}>Responding to received message</Text>
               <TouchableOpacity onPress={() => setShowIncomingContext(false)}>
                 <Ionicons name="close-circle" size={20} color="#a0a0b0" />
               </TouchableOpacity>
             </View>
-            <View style={styles.incomingContent}>
-              <Text style={styles.incomingLabel}>What to expect:</Text>
-              {incomingInsights.map((insight, index) => (
-                <Text key={index} style={styles.incomingInsight}>• {insight}</Text>
+            <View style={styles.contextContent}>
+              <Text style={styles.contextLabel}>What to expect:</Text>
+              {incomingInsights.map((insight, i) => (
+                <Text key={i} style={styles.contextInsight}>- {insight}</Text>
               ))}
-              <Text style={styles.incomingLabel}>If you need to respond:</Text>
-              <Text style={styles.incomingPhrasing}>{incomingPhrasing}</Text>
+              <Text style={styles.contextLabel}>Suggested phrasing:</Text>
+              <Text style={styles.contextPhrasing}>{incomingPhrasing}</Text>
             </View>
           </View>
         )}
 
-        {/* Recording Section */}
-        <View style={styles.recordingSection}>
-          {/* Grounding Line */}
-          {!isRecording && !recordedUri && (
+        {/* Mode Selection */}
+        {mode === 'choose' && !activeAudioUri && (
+          <View style={styles.chooseSection}>
             <Text style={styles.groundingText}>Take your time.</Text>
-          )}
+            <Text style={styles.chooseSubtext}>How would you like to prepare your message?</Text>
 
-          {isRecording && (
-            <View style={styles.recordingIndicator}>
-              <View style={styles.pulseCircle} />
-              <Text style={styles.recordingText}>Recording...</Text>
-              <Text style={styles.durationText}>{formatDuration(recordingDuration)}</Text>
-            </View>
-          )}
-
-          <TouchableOpacity
-            style={[
-              styles.recordButton,
-              isRecording && styles.recordButtonActive,
-            ]}
-            onPress={isRecording ? stopRecording : startRecording}
-            activeOpacity={0.8}
-          >
-            <Ionicons
-              name={isRecording ? 'stop' : 'mic'}
-              size={48}
-              color="#fff"
-            />
-          </TouchableOpacity>
-        </View>
-
-        {/* Playback Section */}
-        {recordedUri && !isRecording && (
-          <View style={styles.playbackSection}>
             <TouchableOpacity
-              style={styles.playButton}
-              onPress={playRecording}
+              style={[styles.modeButton, styles.recordModeButton]}
+              onPress={() => setMode('record')}
               activeOpacity={0.8}
             >
-              <Ionicons
-                name={isPlaying ? 'pause' : 'play'}
-                size={32}
-                color="#4a90e2"
-              />
-              <Text style={styles.playButtonText}>
-                {isPlaying ? 'Pause' : 'Play Recording'}
-              </Text>
+              <Ionicons name="mic" size={32} color="#fff" />
+              <Text style={styles.modeButtonTitle}>Record Voice</Text>
+              <Text style={styles.modeButtonDesc}>Speak naturally, get analysis and suggestions</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.modeButton, styles.ttsModeButton]}
+              onPress={() => setMode('tts')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="text" size={32} color="#f1c40f" />
+              <Text style={styles.modeButtonTitle}>Type Message</Text>
+              <Text style={styles.modeButtonDesc}>Type it out, fix grammar, convert to voice</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* Analysis Results */}
-        {analysisResults && (
-          <View style={styles.insightsSection}>
-            <View style={styles.insightsHeader}>
-              <Text style={styles.insightsTitle}>Insights</Text>
-              <TouchableOpacity
-                onPress={() => Alert.alert(
-                  'About Insights',
-                  'These insights analyze your message tone, pacing, and emotional indicators to help you communicate more effectively.'
-                )}
-              >
-                <Ionicons name="information-circle-outline" size={22} color="#9b59b6" />
-              </TouchableOpacity>
-            </View>
-            {analysisResults.insights.map((insight, index) => (
-              <View key={index} style={styles.insightItem}>
-                <Ionicons name="radio-button-on" size={16} color="#9b59b6" />
-                <Text style={styles.insightText}>{insight}</Text>
-              </View>
-            ))}
-          </View>
-        )}
+        {/* Record Mode */}
+        {mode === 'record' && !activeAudioUri && (
+          <View style={styles.recordSection}>
+            {!isRecording && (
+              <Text style={styles.groundingText}>Take your time.</Text>
+            )}
 
-        {/* Suggestions Section - Always visible once loaded, even during re-recording */}
-        {isLoadingSuggestions && (
-          <View style={styles.loadingSection}>
-            <ActivityIndicator size="large" color="#9b59b6" />
-            <Text style={styles.loadingText}>Analyzing...</Text>
-          </View>
-        )}
-
-        {showSuggestions && suggestions.length > 0 && (
-          <View style={styles.suggestionsContainer}>
             {isRecording && (
-              <View style={styles.recordingBanner}>
-                <View style={styles.recordingDot} />
-                <Text style={styles.recordingBannerText}>
-                  Recording - Read these aloud if helpful
-                </Text>
+              <View style={styles.recordingIndicator}>
+                <View style={styles.pulseCircle} />
+                <Text style={styles.recordingText}>Recording...</Text>
+                <Text style={styles.durationText}>{formatDuration(recordingDuration)}</Text>
               </View>
             )}
-            
-            {/* What we noticed */}
-            <View style={styles.insightsBox}>
-              <Text style={styles.insightsBoxTitle}>What we noticed:</Text>
-              {analysisResults?.insights.map((insight, index) => (
-                <View key={index} style={styles.insightRow}>
-                  <View style={styles.insightDot} />
-                  <Text style={styles.insightTextSmall}>{insight}</Text>
+
+            <TouchableOpacity
+              style={[styles.recordButton, isRecording && styles.recordButtonActive]}
+              onPress={isRecording ? stopRecording : startRecording}
+              activeOpacity={0.8}
+            >
+              <Ionicons name={isRecording ? 'stop' : 'mic'} size={48} color="#fff" />
+            </TouchableOpacity>
+
+            {!isRecording && (
+              <TouchableOpacity onPress={() => setMode('choose')} style={styles.backLink}>
+                <Text style={styles.backLinkText}>Back to options</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {/* TTS Mode */}
+        {mode === 'tts' && !ttsAudioUri && (
+          <View style={styles.ttsSection}>
+            <Text style={styles.ttsLabel}>Type your message</Text>
+            <TextInput
+              style={styles.ttsInput}
+              value={ttsText}
+              onChangeText={(text) => {
+                setTtsText(text);
+                setCorrectedText(null);
+              }}
+              placeholder="What do you want to say?"
+              placeholderTextColor="#666"
+              multiline
+              maxLength={500}
+              autoFocus
+            />
+            <Text style={styles.charCount}>{ttsText.length}/500</Text>
+
+            {/* Grammar correction result */}
+            {correctedText && (
+              <View style={styles.correctionCard}>
+                <Text style={styles.correctionLabel}>Suggested correction:</Text>
+                <Text style={styles.correctionText}>{correctedText}</Text>
+                <View style={styles.correctionActions}>
+                  <TouchableOpacity style={styles.acceptButton} onPress={acceptCorrection}>
+                    <Ionicons name="checkmark" size={18} color="#fff" />
+                    <Text style={styles.acceptButtonText}>Accept</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.keepButton} onPress={() => setCorrectedText(null)}>
+                    <Text style={styles.keepButtonText}>Keep Original</Text>
+                  </TouchableOpacity>
                 </View>
-              ))}
+              </View>
+            )}
+
+            {/* TTS Action Buttons */}
+            <View style={styles.ttsActions}>
+              <TouchableOpacity
+                style={[styles.ttsActionButton, styles.grammarButton]}
+                onPress={handleFixGrammar}
+                disabled={!ttsText.trim() || isFixingGrammar}
+              >
+                {isFixingGrammar ? (
+                  <ActivityIndicator color="#f1c40f" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="sparkles" size={18} color="#f1c40f" />
+                    <Text style={styles.grammarButtonText}>Fix Grammar</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.ttsActionButton, styles.generateButton, (!ttsText.trim() || isGeneratingTts) && styles.disabledButton]}
+                onPress={generateTtsAudio}
+                disabled={!ttsText.trim() || isGeneratingTts}
+              >
+                {isGeneratingTts ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="volume-high" size={18} color="#fff" />
+                    <Text style={styles.generateButtonText}>Generate Voice</Text>
+                  </>
+                )}
+              </TouchableOpacity>
             </View>
 
-            {/* Key Detections - shows flagged phrases and emotion */}
-            {analysisResults && (analysisResults.escalation_detected || analysisResults.emotion?.primary_emotion !== 'calm') && (() => {
-              const isPositive = ['excited', 'affectionate', 'grateful'].includes(analysisResults.emotion?.primary_emotion || '');
-              return (
-              <View style={[styles.detectionsBox, isPositive && styles.detectionsBoxPositive]}>
-                <Text style={[styles.detectionsTitle, isPositive && styles.detectionsTitlePositive]}>Key Detections</Text>
+            <TouchableOpacity onPress={() => setMode('choose')} style={styles.backLink}>
+              <Text style={styles.backLinkText}>Back to options</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-                {/* Emotion */}
-                {analysisResults.emotion && analysisResults.emotion.primary_emotion !== 'calm' && analysisResults.emotion.confidence > 0.2 && (
+        {/* Analysis Loading */}
+        {isAnalyzing && (
+          <View style={styles.loadingSection}>
+            <ActivityIndicator size="large" color="#9b59b6" />
+            <Text style={styles.loadingText}>Analyzing your message...</Text>
+          </View>
+        )}
+
+        {/* Analysis Results + Actions (shown after analysis) */}
+        {hasAnalyzed && !isAnalyzing && activeAudioUri && (
+          <View style={styles.resultsContainer}>
+            {/* Listen First */}
+            <View style={styles.listenFirstCard}>
+              <TouchableOpacity
+                style={[styles.listenButton, isPlaying && styles.listenButtonActive]}
+                onPress={playAudio}
+                activeOpacity={0.8}
+              >
+                <Ionicons name={isPlaying ? 'pause' : 'play'} size={24} color="#fff" />
+                <Text style={styles.listenButtonText}>
+                  {isPlaying ? 'Pause' : 'Listen to your message'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Insights */}
+            {analysisResults && (
+              <View style={styles.insightsBox}>
+                <Text style={styles.insightsBoxTitle}>What we noticed:</Text>
+                {analysisResults.insights.map((insight, i) => (
+                  <View key={i} style={styles.insightRow}>
+                    <View style={[
+                      styles.insightDot,
+                      isPositiveEmotion(analysisResults.emotion?.primary_emotion || '') && styles.insightDotPositive,
+                    ]} />
+                    <Text style={styles.insightText}>{insight}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Key Detections */}
+            {analysisResults && analysisResults.emotion?.primary_emotion !== 'calm' && analysisResults.emotion?.confidence > 0.2 && (() => {
+              const positive = isPositiveEmotion(analysisResults.emotion?.primary_emotion || '');
+              return (
+                <View style={[styles.detectionsBox, positive && styles.detectionsBoxPositive]}>
+                  <Text style={[styles.detectionsTitle, positive && styles.detectionsTitlePositive]}>
+                    {positive ? 'Tone' : 'Key Detections'}
+                  </Text>
                   <View style={styles.detectionRow}>
                     <Text style={styles.detectionLabel}>Tone:</Text>
-                    <View style={[styles.detectionBadge, isPositive && styles.badgePositive]}>
+                    <View style={[styles.detectionBadge, positive && styles.badgePositive]}>
                       <Text style={styles.detectionBadgeText}>
                         {analysisResults.emotion.primary_emotion}
                       </Text>
                     </View>
                   </View>
-                )}
-
-                {/* Severity */}
-                {analysisResults.severity_level !== 'low' && analysisResults.severity_level !== 'none' && (
-                  <View style={styles.detectionRow}>
-                    <Text style={styles.detectionLabel}>Severity:</Text>
-                    <View style={[
-                      styles.detectionBadge,
-                      analysisResults.severity_level === 'high' ? styles.badgeHigh : styles.badgeMedium
-                    ]}>
-                      <Text style={styles.detectionBadgeText}>
-                        {analysisResults.severity_level}
-                      </Text>
-                    </View>
-                  </View>
-                )}
-
-                {/* Detection categories with counts — no actual words shown */}
-                {analysisResults.escalation_words && Object.keys(analysisResults.escalation_words).length > 0 && (
-                  <View style={styles.flaggedSection}>
-                    <Text style={styles.detectionLabel}>Detected:</Text>
-                    {Object.entries(analysisResults.escalation_words).map(([label, count]) => (
-                      <View key={label} style={styles.flaggedRow}>
-                        <View style={[styles.flaggedBullet, isPositive && styles.flaggedBulletPositive]} />
-                        <Text style={styles.flaggedCategory}>
-                          {label}
-                        </Text>
-                        <Text style={styles.flaggedWords}>
-                          ({count as number} {(count as number) === 1 ? 'instance' : 'instances'})
-                        </Text>
+                  {analysisResults.severity_level !== 'low' && analysisResults.severity_level !== 'none' && (
+                    <View style={styles.detectionRow}>
+                      <Text style={styles.detectionLabel}>Severity:</Text>
+                      <View style={[
+                        styles.detectionBadge,
+                        analysisResults.severity_level === 'high' ? styles.badgeHigh : styles.badgeMedium
+                      ]}>
+                        <Text style={styles.detectionBadgeText}>{analysisResults.severity_level}</Text>
                       </View>
-                    ))}
-                  </View>
-                )}
-              </View>
+                    </View>
+                  )}
+                  {analysisResults.escalation_words && Object.keys(analysisResults.escalation_words).length > 0 && (
+                    <View style={styles.flaggedSection}>
+                      {Object.entries(analysisResults.escalation_words).map(([label, count]) => (
+                        <View key={label} style={styles.flaggedRow}>
+                          <View style={[styles.flaggedBullet, positive && styles.flaggedBulletPositive]} />
+                          <Text style={styles.flaggedCategory}>{label}</Text>
+                          <Text style={styles.flaggedCount}>
+                            ({count as number} {(count as number) === 1 ? 'instance' : 'instances'})
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
               );
             })()}
 
-            {/* Example Phrasing - Single focused option */}
-            <View style={styles.rewritesSection}>
-              <Text style={styles.rewritesTitle}>Try saying:</Text>
-              {suggestions.map((suggestion, index) => (
-                <View key={index} style={styles.rewriteCard}>
-                  <Text style={styles.rewriteText}>{suggestion}</Text>
-                </View>
-              ))}
+            {/* Suggestions */}
+            {suggestions.length > 0 && (
+              <View style={styles.suggestionsSection}>
+                <Text style={styles.suggestionsTitle}>
+                  {isPositiveEmotion(analysisResults?.emotion?.primary_emotion || '')
+                    ? 'Try saying:'
+                    : 'Try saying instead:'}
+                </Text>
+                {suggestions.map((suggestion, i) => (
+                  <View key={i} style={styles.suggestionCard}>
+                    <Text style={styles.suggestionText}>{suggestion}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Action Buttons */}
+            <View style={styles.actionButtons}>
+              {isPaired && (
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.sendButton]}
+                  onPress={sendToPartner}
+                  disabled={isSendingToPartner}
+                >
+                  {isSendingToPartner ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="send" size={20} color="#fff" />
+                      <Text style={styles.actionButtonText}>Send to Partner</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity
+                style={[styles.actionButton, styles.shareActionButton]}
+                onPress={shareRecording}
+              >
+                <Ionicons name="share-outline" size={20} color="#fff" />
+                <Text style={styles.actionButtonText}>Send via...</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.actionButton, styles.rerecordButton]}
+                onPress={resetAll}
+              >
+                <Ionicons name="refresh" size={20} color="#fff" />
+                <Text style={styles.actionButtonText}>Start Over</Text>
+              </TouchableOpacity>
             </View>
 
             {/* Disclaimer */}
@@ -492,49 +667,6 @@ export default function OutgoingScreen() {
                 Coaching only. Not therapy or legal advice. If you feel unsafe, step away and seek help.
               </Text>
             </View>
-          </View>
-        )}
-
-        {/* Action Buttons */}
-        {recordedUri && !isRecording && !isLoadingSuggestions && (
-          <View style={styles.actionButtonsColumn}>
-            {/* Send to Partner (if paired) */}
-            {isPaired && (
-              <TouchableOpacity
-                style={[styles.actionButtonFull, styles.partnerSendButton]}
-                onPress={sendToPartner}
-                disabled={isSendingToPartner}
-              >
-                {isSendingToPartner ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <>
-                    <Ionicons name="send" size={20} color="#fff" />
-                    <Text style={styles.actionButtonText}>Send to Partner</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity
-              style={[styles.actionButtonFull, styles.shareButton]}
-              onPress={shareRecording}
-            >
-              <Ionicons name="share-outline" size={20} color="#fff" />
-              <Text style={styles.actionButtonText}>Send via...</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionButtonFull, styles.rerecordButton]}
-              onPress={() => {
-                setRecordedUri(null);
-                setAnalysisResults(null);
-                // DO NOT clear suggestions - keep them visible for reference during re-record
-              }}
-            >
-              <Ionicons name="refresh" size={20} color="#fff" />
-              <Text style={styles.actionButtonText}>Re-record</Text>
-            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
@@ -551,17 +683,80 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingBottom: 48,
   },
-  recordingSection: {
+  // Context card
+  contextCard: {
+    backgroundColor: '#1a0a1f',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: '#9b59b6',
+  },
+  contextHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 32,
-    marginBottom: 32,
+    gap: 8,
+    marginBottom: 12,
+  },
+  contextHeaderText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#9b59b6',
+    fontWeight: '600',
+  },
+  contextContent: { gap: 6 },
+  contextLabel: { fontSize: 11, color: '#a0a0b0', fontWeight: '500', marginTop: 6 },
+  contextInsight: { fontSize: 12, color: '#d0d0d0', lineHeight: 18 },
+  contextPhrasing: { fontSize: 13, color: '#e0e0e0', lineHeight: 19, fontStyle: 'italic' },
+  // Choose mode
+  chooseSection: {
+    alignItems: 'center',
+    marginTop: 24,
+    gap: 16,
   },
   groundingText: {
     fontSize: 18,
     color: '#f1c40f',
     fontWeight: '500',
-    marginBottom: 32,
     textAlign: 'center',
+    marginBottom: 8,
+  },
+  chooseSubtext: {
+    fontSize: 14,
+    color: '#a0a0b0',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  modeButton: {
+    width: '100%',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    gap: 8,
+  },
+  recordModeButton: {
+    backgroundColor: '#9b59b6',
+  },
+  ttsModeButton: {
+    backgroundColor: '#1a1a2e',
+    borderWidth: 1.5,
+    borderColor: '#f1c40f50',
+  },
+  modeButtonTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  modeButtonDesc: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.5)',
+    textAlign: 'center',
+  },
+  // Record mode
+  recordSection: {
+    alignItems: 'center',
+    marginTop: 32,
+    marginBottom: 32,
   },
   recordingIndicator: {
     alignItems: 'center',
@@ -601,138 +796,123 @@ const styles = StyleSheet.create({
   recordButtonActive: {
     backgroundColor: '#e74c3c',
   },
-  playbackSection: {
-    marginBottom: 24,
-    alignItems: 'center',
+  backLink: {
+    marginTop: 20,
   },
-  playButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1a0a1f',
-    padding: 16,
-    borderRadius: 12,
-    gap: 12,
-  },
-  playButtonText: {
-    fontSize: 16,
-    color: '#9b59b6',
-    fontWeight: '600',
-  },
-  analysisSection: {
-    alignItems: 'center',
-    padding: 32,
-  },
-  analyzingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#a0a0b0',
-  },
-  insightsSection: {
-    backgroundColor: '#1a0a1f',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
-  },
-  insightsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  insightsTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  insightItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    gap: 12,
-  },
-  insightText: {
-    flex: 1,
-    fontSize: 15,
-    color: '#e0e0e0',
-  },
-  suggestionsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#6c3483',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-    gap: 8,
-  },
-  suggestionsButtonText: {
-    fontSize: 16,
-    color: '#fff',
-    fontWeight: '600',
-  },
-  suggestionsSection: {
-    backgroundColor: '#1a0a1f',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
-  },
-  suggestionsTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 16,
-  },
-  suggestionItem: {
-    flexDirection: 'row',
-    marginBottom: 16,
-    gap: 12,
-  },
-  suggestionNumber: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#9b59b6',
-    color: '#fff',
-    textAlign: 'center',
-    lineHeight: 24,
-    fontWeight: '600',
+  backLinkText: {
     fontSize: 14,
+    color: '#9b59b6',
   },
-  suggestionText: {
-    flex: 1,
+  // TTS mode
+  ttsSection: {
+    marginTop: 16,
+    gap: 12,
+  },
+  ttsLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  ttsInput: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 12,
+    padding: 16,
+    paddingTop: 16,
+    fontSize: 16,
+    color: '#fff',
+    minHeight: 120,
+    maxHeight: 200,
+    borderWidth: 1,
+    borderColor: '#333',
+    textAlignVertical: 'top',
+  },
+  charCount: {
+    fontSize: 11,
+    color: '#666',
+    textAlign: 'right',
+  },
+  correctionCard: {
+    backgroundColor: '#0a1f0a',
+    borderRadius: 12,
+    padding: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: '#27ae60',
+    gap: 10,
+  },
+  correctionLabel: {
+    fontSize: 12,
+    color: '#27ae60',
+    fontWeight: '600',
+  },
+  correctionText: {
     fontSize: 15,
     color: '#e0e0e0',
     lineHeight: 22,
   },
-  actionButtonsColumn: {
-    gap: 12,
-    marginTop: 8,
+  correctionActions: {
+    flexDirection: 'row',
+    gap: 10,
   },
-  actionButtonFull: {
+  acceptButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#27ae60',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  acceptButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  keepButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#666',
+  },
+  keepButtonText: {
+    color: '#a0a0b0',
+    fontSize: 14,
+  },
+  ttsActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  ttsActionButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
-    borderRadius: 12,
     gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
   },
-  partnerSendButton: {
-    backgroundColor: '#9b59b6',
-  },
-  shareButton: {
-    backgroundColor: '#27ae60',
-  },
-  rerecordButton: {
+  grammarButton: {
     backgroundColor: '#1a1a2e',
     borderWidth: 1,
-    borderColor: '#333',
+    borderColor: '#f1c40f50',
   },
-  actionButtonText: {
+  grammarButtonText: {
+    color: '#f1c40f',
+    fontWeight: '600',
     fontSize: 14,
+  },
+  generateButton: {
+    backgroundColor: '#9b59b6',
+  },
+  generateButtonText: {
     color: '#fff',
     fontWeight: '600',
+    fontSize: 14,
   },
+  disabledButton: {
+    opacity: 0.5,
+  },
+  // Loading
   loadingSection: {
     alignItems: 'center',
     padding: 32,
@@ -744,9 +924,32 @@ const styles = StyleSheet.create({
     color: '#9b59b6',
     fontWeight: '500',
   },
-  suggestionsContainer: {
+  // Results
+  resultsContainer: {
     marginTop: 16,
     gap: 16,
+  },
+  listenFirstCard: {
+    marginBottom: 4,
+  },
+  listenButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1a0a2e',
+    padding: 16,
+    borderRadius: 12,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#9b59b6',
+  },
+  listenButtonActive: {
+    backgroundColor: '#6c3483',
+  },
+  listenButtonText: {
+    fontSize: 16,
+    color: '#fff',
+    fontWeight: '600',
   },
   insightsBox: {
     backgroundColor: '#1a0a1f',
@@ -773,104 +976,13 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: '#9b59b6',
   },
-  insightTextSmall: {
+  insightDotPositive: {
+    backgroundColor: '#27ae60',
+  },
+  insightText: {
     flex: 1,
     fontSize: 13,
     color: '#d0d0d0',
-  },
-  rewritesSection: {
-    gap: 12,
-  },
-  rewritesTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 4,
-  },
-  rewriteCard: {
-    backgroundColor: '#1a0a1f',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#9b59b6',
-  },
-  rewriteText: {
-    fontSize: 15,
-    color: '#e0e0e0',
-    lineHeight: 22,
-  },
-  disclaimerBox: {
-    backgroundColor: '#1a0a1f',
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 8,
-  },
-  disclaimerText: {
-    fontSize: 11,
-    color: '#808080',
-    lineHeight: 16,
-    textAlign: 'center',
-  },
-  recordingBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#e74c3c',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-    gap: 10,
-  },
-  recordingDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#fff',
-  },
-  recordingBannerText: {
-    flex: 1,
-    fontSize: 13,
-    color: '#fff',
-    fontWeight: '600',
-  },
-  incomingContextCard: {
-    backgroundColor: '#1a0a1f',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderLeftWidth: 3,
-    borderLeftColor: '#9b59b6',
-  },
-  incomingHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  incomingHeaderText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#9b59b6',
-    fontWeight: '600',
-  },
-  incomingContent: {
-    gap: 6,
-  },
-  incomingLabel: {
-    fontSize: 11,
-    color: '#a0a0b0',
-    fontWeight: '500',
-    marginTop: 6,
-  },
-  incomingInsight: {
-    fontSize: 12,
-    color: '#d0d0d0',
-    lineHeight: 18,
-  },
-  incomingPhrasing: {
-    fontSize: 13,
-    color: '#e0e0e0',
-    lineHeight: 19,
-    fontStyle: 'italic',
   },
   detectionsBox: {
     backgroundColor: '#1a0a1f',
@@ -914,24 +1026,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'capitalize',
   },
-  badgeHigh: {
-    backgroundColor: '#e74c3c',
-  },
-  badgeMedium: {
-    backgroundColor: '#e67e22',
-  },
-  badgePositive: {
-    backgroundColor: '#27ae60',
-  },
-  flaggedSection: {
-    marginTop: 8,
-    gap: 6,
-  },
+  badgeHigh: { backgroundColor: '#e74c3c' },
+  badgeMedium: { backgroundColor: '#e67e22' },
+  badgePositive: { backgroundColor: '#27ae60' },
+  flaggedSection: { marginTop: 8, gap: 6 },
   flaggedRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginTop: 6,
+    marginTop: 4,
   },
   flaggedBullet: {
     width: 6,
@@ -939,16 +1042,63 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: '#e74c3c',
   },
-  flaggedBulletPositive: {
-    backgroundColor: '#27ae60',
+  flaggedBulletPositive: { backgroundColor: '#27ae60' },
+  flaggedCategory: { fontSize: 13, color: '#e0e0e0', fontWeight: '500' },
+  flaggedCount: { fontSize: 12, color: '#a0a0b0' },
+  // Suggestions
+  suggestionsSection: { gap: 10 },
+  suggestionsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
   },
-  flaggedCategory: {
-    fontSize: 13,
+  suggestionCard: {
+    backgroundColor: '#1a0a1f',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#9b59b6',
+  },
+  suggestionText: {
+    fontSize: 15,
     color: '#e0e0e0',
-    fontWeight: '500',
+    lineHeight: 22,
   },
-  flaggedWords: {
-    fontSize: 12,
-    color: '#a0a0b0',
+  // Actions
+  actionButtons: {
+    gap: 12,
+    marginTop: 8,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  sendButton: { backgroundColor: '#9b59b6' },
+  shareActionButton: { backgroundColor: '#27ae60' },
+  rerecordButton: {
+    backgroundColor: '#1a1a2e',
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  actionButtonText: {
+    fontSize: 14,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  disclaimerBox: {
+    backgroundColor: '#1a0a1f',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+  },
+  disclaimerText: {
+    fontSize: 11,
+    color: '#808080',
+    lineHeight: 16,
+    textAlign: 'center',
   },
 });

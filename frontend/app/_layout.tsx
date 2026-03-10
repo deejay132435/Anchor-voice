@@ -4,7 +4,6 @@ import { useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import { useShareIntent } from 'expo-share-intent';
 import Constants from 'expo-constants';
-import { preventScreenCaptureAsync } from 'expo-screen-capture';
 import { ensureAuth } from '../services/firebaseConfig';
 import { getOrCreateDeviceId, registerDevice } from '../services/deviceService';
 import { registerForPushNotifications, savePushToken } from '../services/notificationService';
@@ -13,12 +12,6 @@ import * as Notifications from 'expo-notifications';
 export default function RootLayout() {
   const router = useRouter();
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntent();
-
-  // Screenshot protection disabled temporarily for Play Store screenshots
-  // TODO: Re-enable before production release
-  // useEffect(() => {
-  //   preventScreenCaptureAsync().catch(() => {});
-  // }, []);
 
   const notificationResponseListener = useRef<Notifications.EventSubscription>();
 
@@ -30,7 +23,6 @@ export default function RootLayout() {
         const deviceId = await getOrCreateDeviceId();
         await registerDevice(deviceId);
 
-        // Register for push notifications and save token
         const pushToken = await registerForPushNotifications();
         if (pushToken) {
           await savePushToken(deviceId, pushToken);
@@ -42,10 +34,10 @@ export default function RootLayout() {
     };
     init();
 
-    // Handle notification taps — navigate to messages
+    // Handle notification taps — navigate to Listen & Respond
     notificationResponseListener.current =
       Notifications.addNotificationResponseReceivedListener((response) => {
-        router.push('/messages');
+        router.push('/incoming');
       });
 
     return () => {
@@ -55,7 +47,7 @@ export default function RootLayout() {
     };
   }, []);
 
-  // Pre-warm the backend on app launch so analysis is fast when needed
+  // Pre-warm the backend
   useEffect(() => {
     const apiUrl = Constants.expoConfig?.extra?.apiUrl;
     if (apiUrl) {
@@ -65,7 +57,6 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (hasShareIntent && shareIntent) {
-      // Handle shared audio files from other apps
       const sharedFile = shareIntent.files?.[0];
       if (sharedFile?.path) {
         router.push({
@@ -100,28 +91,21 @@ export default function RootLayout() {
         <Stack.Screen
           name="outgoing"
           options={{
-            title: 'Record Message',
+            title: 'Prepare Message',
             presentation: 'card',
           }}
         />
         <Stack.Screen
           name="incoming"
           options={{
-            title: 'Received Message',
+            title: 'Listen & Respond',
             presentation: 'card',
           }}
         />
         <Stack.Screen
           name="pair"
           options={{
-            title: 'Partner Pairing',
-            presentation: 'card',
-          }}
-        />
-        <Stack.Screen
-          name="messages"
-          options={{
-            title: 'Messages',
+            title: 'Connect with Partner',
             presentation: 'card',
           }}
         />

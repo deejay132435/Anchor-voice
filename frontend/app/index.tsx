@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -23,7 +23,6 @@ export default function HomeScreen() {
   const [pairId, setPairId] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Check pairing status whenever screen comes into focus
   useFocusEffect(
     useCallback(() => {
       let messageUnsub: (() => void) | null = null;
@@ -35,7 +34,6 @@ export default function HomeScreen() {
           setIsPaired(!!pair);
           setPairId(pair?.pairId || null);
 
-          // Subscribe to unread messages if paired
           if (pair?.pairId) {
             const messagesRef = ref(database, `messages/${pair.pairId}`);
             messageUnsub = onValue(messagesRef, (snapshot) => {
@@ -65,9 +63,7 @@ export default function HomeScreen() {
       checkPairing();
 
       return () => {
-        if (messageUnsub) {
-          messageUnsub();
-        }
+        if (messageUnsub) messageUnsub();
       };
     }, [])
   );
@@ -75,7 +71,7 @@ export default function HomeScreen() {
   const handleDisconnect = () => {
     Alert.alert(
       'Disconnect Partner',
-      'This will remove the pairing. You won\'t be able to send or receive in-app messages until you pair again.',
+      'This will remove the pairing and delete all messages. You won\'t be able to send or receive messages until you pair again.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -109,9 +105,9 @@ export default function HomeScreen() {
           </View>
           <Text style={styles.title}>Anchor</Text>
           <Text style={styles.subtitle}>
-            Stay steady. You{"'"}re in control.
+            How do I say this without making it worse?
           </Text>
-          {/* Pairing Status — tap to disconnect when paired */}
+          {/* Pairing Status */}
           <TouchableOpacity
             onPress={isPaired ? handleDisconnect : undefined}
             activeOpacity={isPaired ? 0.7 : 1}
@@ -128,8 +124,32 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Main Action Buttons */}
+        {/* 3 Main Action Buttons */}
         <View style={styles.actionsContainer}>
+          {/* 1. Connect with Partner */}
+          <TouchableOpacity
+            style={[styles.actionButton, isPaired ? styles.connectedButton : styles.pairButton]}
+            onPress={() => {
+              if (isPaired) {
+                handleDisconnect();
+              } else {
+                router.push('/pair');
+              }
+            }}
+            activeOpacity={0.8}
+          >
+            <View style={styles.buttonContent}>
+              <Ionicons name="people" size={28} color="#f1c40f" />
+              <Text style={styles.buttonTitle}>Connect with Partner</Text>
+              <Text style={styles.buttonDescription}>
+                {isPaired
+                  ? 'Paired - tap to manage connection'
+                  : 'Generate a code to pair with your partner'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* 2. Prepare Message */}
           <TouchableOpacity
             style={[styles.actionButton, styles.primaryButton]}
             onPress={() => router.push('/outgoing')}
@@ -137,68 +157,43 @@ export default function HomeScreen() {
           >
             <View style={styles.buttonContent}>
               <Ionicons name="mic" size={28} color="#fff" />
-              <Text style={styles.buttonTitle}>Prepare a Voice Message</Text>
+              <Text style={styles.buttonTitle}>Prepare Message</Text>
               <Text style={styles.buttonDescription}>
-                Record, review, send to partner or via...
+                Record or type, get analysis and suggestions, listen before sending
               </Text>
             </View>
           </TouchableOpacity>
 
+          {/* 3. Listen & Respond */}
           <TouchableOpacity
             style={[styles.actionButton, styles.secondaryButton]}
             onPress={() => router.push('/incoming')}
             activeOpacity={0.8}
           >
             <View style={styles.buttonContent}>
-              <Ionicons name="download" size={28} color="#fff" />
-              <Text style={styles.buttonTitle}>Listen to a Voice Message</Text>
+              <View style={styles.listenIconContainer}>
+                <Ionicons name="headset" size={28} color="#fff" />
+                {unreadCount > 0 && (
+                  <View style={styles.unreadBadge}>
+                    <Text style={styles.unreadText}>{unreadCount}</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={styles.buttonTitle}>Listen & Respond</Text>
               <Text style={styles.buttonDescription}>
-                Received messages or select a file
+                Hear partner{"'"}s message with analysis first, then respond
               </Text>
             </View>
           </TouchableOpacity>
-
-          {/* Pairing / Messages Button */}
-          {isPaired ? (
-            <TouchableOpacity
-              style={[styles.actionButton, styles.messagesButton]}
-              onPress={() => router.push('/messages')}
-              activeOpacity={0.8}
-            >
-              <View style={styles.buttonContent}>
-                <View style={styles.messagesIconContainer}>
-                  <Ionicons name="chatbubbles" size={24} color="#f1c40f" />
-                  {unreadCount > 0 && (
-                    <View style={styles.unreadBadge}>
-                      <Text style={styles.unreadText}>{unreadCount}</Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={styles.buttonTitle}>Messages</Text>
-                <Text style={styles.buttonDescription}>
-                  Voice &amp; text-to-speech with partner
-                </Text>
-              </View>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[styles.actionButton, styles.pairButton]}
-              onPress={() => router.push('/pair')}
-              activeOpacity={0.8}
-            >
-              <View style={styles.buttonContent}>
-                <Ionicons name="people" size={24} color="#f1c40f" />
-                <Text style={styles.buttonTitle}>Connect with Partner</Text>
-                <Text style={styles.buttonDescription}>
-                  Pair to send in-app voice messages
-                </Text>
-              </View>
-            </TouchableOpacity>
-          )}
         </View>
 
-        {/* Footer tagline */}
-        <Text style={styles.footerText}>Your voice. Your pace.</Text>
+        {/* Footer */}
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>Your voice. Your pace.</Text>
+          <Text style={styles.disclaimerText}>
+            All messages self-delete after both listen.
+          </Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -217,7 +212,7 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginTop: 8,
-    marginBottom: 20,
+    marginBottom: 24,
   },
   iconContainer: {
     width: 48,
@@ -242,6 +237,7 @@ const styles = StyleSheet.create({
     color: '#a0a0b0',
     textAlign: 'center',
     marginTop: 8,
+    fontStyle: 'italic',
   },
   statusContainer: {
     flexDirection: 'row',
@@ -277,28 +273,28 @@ const styles = StyleSheet.create({
     color: '#27ae60',
   },
   actionsContainer: {
-    gap: 12,
+    gap: 14,
   },
   actionButton: {
     borderRadius: 16,
-    padding: 18,
+    padding: 20,
     justifyContent: 'center',
+  },
+  pairButton: {
+    backgroundColor: '#1a1a2e',
+    borderWidth: 1.5,
+    borderColor: '#f1c40f50',
+  },
+  connectedButton: {
+    backgroundColor: '#0a1f0a',
+    borderWidth: 1.5,
+    borderColor: '#27ae6040',
   },
   primaryButton: {
     backgroundColor: '#9b59b6',
   },
   secondaryButton: {
     backgroundColor: '#6c3483',
-  },
-  messagesButton: {
-    backgroundColor: '#1a0a2e',
-    borderWidth: 1.5,
-    borderColor: '#f1c40f50',
-  },
-  pairButton: {
-    backgroundColor: '#1a1a2e',
-    borderWidth: 1.5,
-    borderColor: '#f1c40f50',
   },
   buttonContent: {
     alignItems: 'center',
@@ -307,21 +303,22 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#fff',
-    marginTop: 6,
+    marginTop: 8,
   },
   buttonDescription: {
     fontSize: 12,
     color: 'rgba(255, 255, 255, 0.5)',
-    marginTop: 3,
+    marginTop: 4,
     textAlign: 'center',
+    lineHeight: 17,
   },
-  messagesIconContainer: {
+  listenIconContainer: {
     position: 'relative',
   },
   unreadBadge: {
     position: 'absolute',
     top: -6,
-    right: -10,
+    right: -12,
     backgroundColor: '#e74c3c',
     borderRadius: 10,
     minWidth: 20,
@@ -335,11 +332,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
+  footer: {
+    alignItems: 'center',
+    marginTop: 24,
+    gap: 4,
+  },
   footerText: {
-    textAlign: 'center',
     color: '#f1c40f60',
     fontSize: 12,
-    marginTop: 20,
-    paddingBottom: 8,
+  },
+  disclaimerText: {
+    color: '#50505a',
+    fontSize: 11,
   },
 });

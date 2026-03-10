@@ -22,6 +22,7 @@ import { getPairInfo } from '../services/pairingService';
 export default function IncomingScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -29,7 +30,7 @@ export default function IncomingScreen() {
   const [hasAnalyzed, setHasAnalyzed] = useState(false);
   const [insights, setInsights] = useState<string[]>([]);
   const [analysisResults, setAnalysisResults] = useState<AudioAnalysisResponse | null>(null);
-  const [examplePhrasing, setExamplePhrasing] = useState<string>('');
+  const [suggestions, setSuggestions] = useState<string[]>([]);
 
   // In-app message params
   const inAppMessageId = params.messageId as string | undefined;
@@ -37,33 +38,29 @@ export default function IncomingScreen() {
   const inAppAudioUrl = params.audioUrl as string | undefined;
   const isInAppMessage = !!(inAppMessageId && inAppPairId && inAppAudioUrl);
 
-  // Received in-app messages
+  // Received messages
   const [receivedMessages, setReceivedMessages] = useState<Message[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [deviceId, setDeviceId] = useState<string>('');
+  const [currentMessageId, setCurrentMessageId] = useState<string | null>(null);
+  const [currentPairId, setCurrentPairId] = useState<string | null>(null);
+  const [hasListened, setHasListened] = useState(false);
 
   useEffect(() => {
-    // Handle in-app message
     if (isInAppMessage) {
-      console.log('[Incoming] In-app message received:', inAppMessageId);
       loadInAppMessage();
       return;
     }
 
-    // Check if audio was shared from another app
     if (params.sharedUri && typeof params.sharedUri === 'string') {
-      console.log('[Incoming] Shared audio received:', params.sharedUri);
       setAudioUri(params.sharedUri);
       analyzeIncomingAudio(params.sharedUri);
     }
 
-    // Load received in-app messages
     loadReceivedMessages();
 
     return () => {
-      if (sound) {
-        sound.unloadAsync();
-      }
+      if (sound) sound.unloadAsync();
     };
   }, [params.sharedUri, inAppMessageId]);
 
@@ -75,8 +72,8 @@ export default function IncomingScreen() {
       const pair = await getPairInfo(id);
       if (!pair) return;
 
+      setCurrentPairId(pair.pairId);
       const messages = await getRecentMessages(pair.pairId);
-      // Filter: only received, not deleted, not yet listened by receiver
       const unlistened = messages.filter(
         (m) => m.sender !== id && !m.deleted && !m.listenedByReceiver
       );
@@ -89,27 +86,19 @@ export default function IncomingScreen() {
   };
 
   const openReceivedMessage = (msg: Message) => {
-    // Load this message for analysis
     setAudioUri(null);
     setInsights([]);
-    setExamplePhrasing('');
+    setSuggestions([]);
     setHasAnalyzed(false);
+    setHasListened(false);
+    setCurrentMessageId(msg.id);
 
-    // Use the in-app message flow
     const loadMsg = async () => {
       try {
         setIsAnalyzing(true);
         const localUri = await downloadVoiceMessage(msg.audioUrl, msg.id);
         setAudioUri(localUri);
         await analyzeIncomingAudio(localUri);
-
-        // Mark as listened after analysis
-        const pair = await getPairInfo(deviceId);
-        if (pair) {
-          await markAsListened(pair.pairId, msg.id, deviceId);
-          // Remove from list
-          setReceivedMessages((prev) => prev.filter((m) => m.id !== msg.id));
-        }
       } catch (err) {
         console.log('[Incoming] Message load error:', err);
         Alert.alert('Error', 'Could not load message.');
@@ -119,18 +108,10 @@ export default function IncomingScreen() {
     loadMsg();
   };
 
-  const formatTime = (timestamp: number) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const isToday = date.toDateString() === now.toDateString();
-    if (isToday) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-  };
-
   const loadInAppMessage = async () => {
     if (!inAppAudioUrl || !inAppMessageId) return;
+    setCurrentMessageId(inAppMessageId);
+    setCurrentPairId(inAppPairId || null);
     try {
       setIsAnalyzing(true);
       const localUri = await downloadVoiceMessage(inAppAudioUrl, inAppMessageId);
@@ -149,12 +130,10 @@ export default function IncomingScreen() {
         type: 'audio/*',
         copyToCacheDirectory: true,
       });
-
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
         setAudioUri(asset.uri);
-        
-        // DO NOT auto-play - analyze first
+        setCurrentMessageId(null); // Not an in-app message
         await analyzeIncomingAudio(asset.uri);
       }
     } catch (error) {
@@ -168,7 +147,6 @@ export default function IncomingScreen() {
     setHasAnalyzed(false);
 
     try {
-      // Ensure we have a readable file URI (content:// URIs may not be directly readable)
       let readableUri = uri;
       if (uri.startsWith('content://')) {
         const cachedPath = (FileSystem.cacheDirectory || FileSystem.documentDirectory) + 'incoming_audio_' + Date.now();
@@ -176,12 +154,8 @@ export default function IncomingScreen() {
         readableUri = cachedPath;
       }
 
-      // Read audio file as base64
-      const base64Audio = await FileSystem.readAsStringAsync(readableUri, {
-        encoding: 'base64',
-      });
+      const base64Audio = await FileSystem.readAsStringAsync(readableUri, { encoding: 'base64' });
 
-      // Get actual audio duration
       let durationSeconds = 1;
       try {
         const { sound: tempSound } = await Audio.Sound.createAsync({ uri: readableUri });
@@ -190,19 +164,16 @@ export default function IncomingScreen() {
           durationSeconds = Math.max(1, Math.round(status.durationMillis / 1000));
         }
         await tempSound.unloadAsync();
-      } catch (e) {
-        console.warn('Could not determine audio duration, using fallback:', e);
-      }
+      } catch {}
 
-      // Single call: analyze audio AND generate suggestions together (faster)
       const analysis = await analyzeAudio(base64Audio, durationSeconds, 'incoming');
       setInsights(analysis.insights);
       setAnalysisResults(analysis);
-      setExamplePhrasing(analysis.suggestions?.[0] || "I hear you. Let me take a moment before responding.");
+      setSuggestions(analysis.suggestions || []);
       setHasAnalyzed(true);
     } catch (error) {
-      console.error('Error analyzing audio:', error);
-      Alert.alert('Analysis Error', 'Could not analyze audio. Check your connection and try again.');
+      console.error('Analysis error:', error);
+      Alert.alert('Analysis Error', 'Could not analyze audio. Check your connection.');
     } finally {
       setIsAnalyzing(false);
     }
@@ -220,22 +191,32 @@ export default function IncomingScreen() {
         return;
       }
 
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+      });
+
       const { sound: newSound } = await Audio.Sound.createAsync(
         { uri: audioUri },
         { shouldPlay: true }
       );
-      
       setSound(newSound);
       setIsPlaying(true);
 
       newSound.setOnPlaybackStatusUpdate(async (status) => {
         if (status.isLoaded && status.didJustFinish) {
           setIsPlaying(false);
-          // Mark in-app messages as listened when playback finishes
-          if (isInAppMessage && inAppPairId && inAppMessageId) {
+          setHasListened(true);
+
+          // Mark as listened + auto-delete trigger
+          const msgId = currentMessageId || inAppMessageId;
+          const pId = currentPairId || inAppPairId;
+          if (msgId && pId) {
             try {
-              const myDeviceId = await getOrCreateDeviceId();
-              await markAsListened(inAppPairId, inAppMessageId, myDeviceId);
+              const myDeviceId = deviceId || await getOrCreateDeviceId();
+              await markAsListened(pId, msgId, myDeviceId);
+              // Remove from received list
+              setReceivedMessages((prev) => prev.filter((m) => m.id !== msgId));
             } catch (err) {
               console.log('[Incoming] Mark as listened error:', err);
             }
@@ -243,48 +224,65 @@ export default function IncomingScreen() {
         }
       });
     } catch (error) {
-      console.error('Error playing audio:', error);
+      console.error('Playback error:', error);
       setIsPlaying(false);
       Alert.alert('Error', 'Failed to play audio.');
     }
   };
 
-  const handleWait = () => {
-    // Clear state and go back
-    setAudioUri(null);
-    setInsights([]);
-    setExamplePhrasing('');
-    setHasAnalyzed(false);
+  const handleGoBack = () => {
     router.back();
   };
 
   const handleRecordResponse = () => {
-    // Navigate to outgoing screen with incoming context
     router.push({
       pathname: '/outgoing',
       params: {
         incomingInsights: JSON.stringify(insights),
-        incomingPhrasing: examplePhrasing,
-        ...(isInAppMessage ? { sendMode: 'inapp' } : {}),
+        incomingPhrasing: suggestions[0] || "I hear you. Let me take a moment before responding.",
       }
     });
   };
+
+  const handleNewMessage = () => {
+    setAudioUri(null);
+    setInsights([]);
+    setSuggestions([]);
+    setAnalysisResults(null);
+    setHasAnalyzed(false);
+    setHasListened(false);
+    setCurrentMessageId(null);
+    loadReceivedMessages();
+  };
+
+  const formatTime = (timestamp: number) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+    if (isToday) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
+  const isPositiveEmotion = (emotion: string) =>
+    ['calm', 'excited', 'affectionate', 'grateful', 'apologetic', 'supportive'].includes(emotion);
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Instructions */}
-        {!audioUri && (
+        {!audioUri && !isAnalyzing && (
           <View style={styles.instructionsSection}>
             <Text style={styles.groundingText}>You{"'"}re in control.</Text>
             <Text style={styles.instructionText}>
-              Select a voice message to prepare yourself before listening.
+              See the analysis before you listen. Take your time.
             </Text>
           </View>
         )}
 
-        {/* Received In-App Messages */}
-        {!audioUri && receivedMessages.length > 0 && (
+        {/* Received Messages */}
+        {!audioUri && !isAnalyzing && receivedMessages.length > 0 && (
           <View style={styles.receivedSection}>
             <Text style={styles.receivedTitle}>
               <Ionicons name="mail-unread" size={16} color="#f1c40f" /> New from Partner
@@ -300,13 +298,19 @@ export default function IncomingScreen() {
                   <Ionicons name="volume-medium" size={22} color="#9b59b6" />
                 </View>
                 <View style={styles.receivedCardContent}>
-                  <Text style={styles.receivedCardLabel}>Voice message from partner</Text>
+                  <Text style={styles.receivedCardLabel}>Voice message</Text>
                   <Text style={styles.receivedCardMeta}>
                     {Math.floor(msg.audioDurationSeconds / 60)}:{Math.round(msg.audioDurationSeconds % 60).toString().padStart(2, '0')} · {formatTime(msg.timestamp)}
                   </Text>
                   <View style={styles.receivedBadges}>
-                    <View style={[styles.receivedBadge, { backgroundColor: msg.analysisSummary.severity_level === 'high' ? '#e74c3c30' : msg.analysisSummary.severity_level === 'medium' ? '#f39c1230' : '#27ae6030' }]}>
-                      <Text style={[styles.receivedBadgeText, { color: msg.analysisSummary.severity_level === 'high' ? '#e74c3c' : msg.analysisSummary.severity_level === 'medium' ? '#f39c12' : '#27ae60' }]}>
+                    <View style={[styles.receivedBadge, {
+                      backgroundColor: msg.analysisSummary.severity_level === 'high' ? '#e74c3c30'
+                        : msg.analysisSummary.severity_level === 'medium' ? '#f39c1230' : '#27ae6030'
+                    }]}>
+                      <Text style={[styles.receivedBadgeText, {
+                        color: msg.analysisSummary.severity_level === 'high' ? '#e74c3c'
+                          : msg.analysisSummary.severity_level === 'medium' ? '#f39c12' : '#27ae60'
+                      }]}>
                         {msg.analysisSummary.severity_level}
                       </Text>
                     </View>
@@ -323,8 +327,8 @@ export default function IncomingScreen() {
           </View>
         )}
 
-        {/* Select Audio Button */}
-        {!audioUri && (
+        {/* Select Audio File */}
+        {!audioUri && !isAnalyzing && (
           <TouchableOpacity
             style={styles.selectButton}
             onPress={pickAudioFile}
@@ -335,92 +339,89 @@ export default function IncomingScreen() {
           </TouchableOpacity>
         )}
 
-        {/* Analysis Loading */}
+        {/* Loading */}
         {isAnalyzing && (
           <View style={styles.analysisSection}>
             <ActivityIndicator size="large" color="#9b59b6" />
-            <Text style={styles.analyzingText}>Analyzing...</Text>
+            <Text style={styles.analyzingText}>Preparing analysis...</Text>
+            <Text style={styles.analyzingSubtext}>You{"'"}ll see the analysis before hearing the message</Text>
           </View>
         )}
 
-        {/* Analysis Results - What to Expect */}
+        {/* Analysis Results */}
         {hasAnalyzed && !isAnalyzing && (
           <View style={styles.resultsContainer}>
             {/* What to Expect */}
             <View style={styles.expectSection}>
               <Text style={styles.expectTitle}>What to expect:</Text>
-              {insights.map((insight, index) => (
-                <View key={index} style={styles.insightRow}>
-                  <View style={styles.insightDot} />
+              {insights.map((insight, i) => (
+                <View key={i} style={styles.insightRow}>
+                  <View style={[
+                    styles.insightDot,
+                    isPositiveEmotion(analysisResults?.emotion?.primary_emotion || '') && styles.insightDotPositive,
+                  ]} />
                   <Text style={styles.insightText}>{insight}</Text>
                 </View>
               ))}
             </View>
 
             {/* Key Detections */}
-            {analysisResults && (analysisResults.escalation_detected || (analysisResults.emotion?.primary_emotion !== 'calm' && analysisResults.emotion?.confidence > 0.2)) && (() => {
-              const isPositive = ['excited', 'affectionate', 'grateful'].includes(analysisResults.emotion?.primary_emotion || '');
+            {analysisResults && analysisResults.emotion?.primary_emotion !== 'calm' && analysisResults.emotion?.confidence > 0.2 && (() => {
+              const positive = isPositiveEmotion(analysisResults.emotion?.primary_emotion || '');
               return (
-              <View style={[styles.detectionsBox, isPositive && styles.detectionsBoxPositive]}>
-                <Text style={[styles.detectionsTitle, isPositive && styles.detectionsTitlePositive]}>Key Detections</Text>
-
-                {/* Emotion */}
-                {analysisResults.emotion && analysisResults.emotion.primary_emotion !== 'calm' && analysisResults.emotion.confidence > 0.2 && (
+                <View style={[styles.detectionsBox, positive && styles.detectionsBoxPositive]}>
+                  <Text style={[styles.detectionsTitle, positive && styles.detectionsTitlePositive]}>
+                    {positive ? 'Tone' : 'Key Detections'}
+                  </Text>
                   <View style={styles.detectionRow}>
                     <Text style={styles.detectionLabel}>Tone:</Text>
-                    <View style={[styles.detectionBadge, isPositive && styles.badgePositive]}>
+                    <View style={[styles.detectionBadge, positive && styles.badgePositive]}>
                       <Text style={styles.detectionBadgeText}>
                         {analysisResults.emotion.primary_emotion}
                       </Text>
                     </View>
                   </View>
-                )}
-
-                {/* Severity */}
-                {analysisResults.severity_level !== 'low' && analysisResults.severity_level !== 'none' && (
-                  <View style={styles.detectionRow}>
-                    <Text style={styles.detectionLabel}>Severity:</Text>
-                    <View style={[
-                      styles.detectionBadge,
-                      analysisResults.severity_level === 'high' ? styles.badgeHigh : styles.badgeMedium
-                    ]}>
-                      <Text style={styles.detectionBadgeText}>
-                        {analysisResults.severity_level}
-                      </Text>
-                    </View>
-                  </View>
-                )}
-
-                {/* Detection categories with counts — no actual words shown */}
-                {analysisResults.escalation_words && Object.keys(analysisResults.escalation_words).length > 0 && (
-                  <View style={styles.flaggedSection}>
-                    <Text style={styles.detectionLabel}>Detected:</Text>
-                    {Object.entries(analysisResults.escalation_words).map(([label, count]) => (
-                      <View key={label} style={styles.flaggedRow}>
-                        <View style={[styles.flaggedBullet, isPositive && styles.flaggedBulletPositive]} />
-                        <Text style={styles.flaggedCategory}>
-                          {label}
-                        </Text>
-                        <Text style={styles.flaggedWords}>
-                          ({count as number} {(count as number) === 1 ? 'instance' : 'instances'})
-                        </Text>
+                  {analysisResults.severity_level !== 'low' && analysisResults.severity_level !== 'none' && (
+                    <View style={styles.detectionRow}>
+                      <Text style={styles.detectionLabel}>Severity:</Text>
+                      <View style={[
+                        styles.detectionBadge,
+                        analysisResults.severity_level === 'high' ? styles.badgeHigh : styles.badgeMedium
+                      ]}>
+                        <Text style={styles.detectionBadgeText}>{analysisResults.severity_level}</Text>
                       </View>
-                    ))}
-                  </View>
-                )}
-              </View>
+                    </View>
+                  )}
+                  {analysisResults.escalation_words && Object.keys(analysisResults.escalation_words).length > 0 && (
+                    <View style={styles.flaggedSection}>
+                      {Object.entries(analysisResults.escalation_words).map(([label, count]) => (
+                        <View key={label} style={styles.flaggedRow}>
+                          <View style={[styles.flaggedBullet, positive && styles.flaggedBulletPositive]} />
+                          <Text style={styles.flaggedCategory}>{label}</Text>
+                          <Text style={styles.flaggedCount}>
+                            ({count as number} {(count as number) === 1 ? 'instance' : 'instances'})
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
               );
             })()}
 
-            {/* Example Phrasing */}
-            <View style={styles.phrasingSection}>
-              <Text style={styles.phrasingTitle}>If you need to respond:</Text>
-              <View style={styles.phrasingCard}>
-                <Text style={styles.phrasingText}>{examplePhrasing}</Text>
+            {/* Suggested Responses */}
+            {suggestions.length > 0 && (
+              <View style={styles.suggestionsSection}>
+                <Text style={styles.suggestionsTitle}>If you need to respond:</Text>
+                {suggestions.map((suggestion, i) => (
+                  <View key={i} style={styles.suggestionCard}>
+                    <Text style={styles.suggestionText}>{suggestion}</Text>
+                  </View>
+                ))}
               </View>
-            </View>
+            )}
 
-            {/* User Choices */}
+            {/* Action Buttons */}
             <View style={styles.choicesContainer}>
               <TouchableOpacity
                 style={[styles.choiceButton, styles.listenButton]}
@@ -429,27 +430,50 @@ export default function IncomingScreen() {
               >
                 <Ionicons name={isPlaying ? "pause" : "play"} size={20} color="#fff" />
                 <Text style={styles.choiceButtonText}>
-                  {isPlaying ? 'Pause' : 'Listen now'}
+                  {isPlaying ? 'Pause' : hasListened ? 'Listen again' : 'Listen now'}
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.choiceButton, styles.waitButton]}
-                onPress={handleWait}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.choiceButtonText}>Wait</Text>
-              </TouchableOpacity>
+              {hasListened && (
+                <TouchableOpacity
+                  style={[styles.choiceButton, styles.respondButton]}
+                  onPress={handleRecordResponse}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="mic" size={20} color="#fff" />
+                  <Text style={styles.choiceButtonText}>Prepare a response</Text>
+                </TouchableOpacity>
+              )}
 
               <TouchableOpacity
-                style={[styles.choiceButton, styles.recordButton]}
-                onPress={handleRecordResponse}
+                style={[styles.choiceButton, styles.waitButton]}
+                onPress={handleGoBack}
                 activeOpacity={0.8}
               >
-                <Ionicons name="mic" size={20} color="#fff" />
-                <Text style={styles.choiceButtonText}>Record a response</Text>
+                <Text style={styles.choiceButtonText}>
+                  {hasListened ? 'Done' : 'Not now'}
+                </Text>
               </TouchableOpacity>
+
+              {hasListened && (
+                <TouchableOpacity
+                  style={styles.newMessageLink}
+                  onPress={handleNewMessage}
+                >
+                  <Text style={styles.newMessageLinkText}>Open another message</Text>
+                </TouchableOpacity>
+              )}
             </View>
+
+            {/* Self-delete notice */}
+            {hasListened && currentMessageId && (
+              <View style={styles.deleteNotice}>
+                <Ionicons name="shield-checkmark" size={14} color="#27ae60" />
+                <Text style={styles.deleteNoticeText}>
+                  Message will self-delete once both you and your partner have listened.
+                </Text>
+              </View>
+            )}
 
             {/* Disclaimer */}
             <View style={styles.disclaimerBox}>
@@ -491,206 +515,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-  selectButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#9b59b6',
-    padding: 18,
-    borderRadius: 12,
-    marginBottom: 24,
-    gap: 12,
-  },
-  selectButtonText: {
-    fontSize: 16,
-    color: '#fff',
-    fontWeight: '600',
-  },
-  analysisSection: {
-    alignItems: 'center',
-    padding: 32,
-    marginTop: 48,
-  },
-  analyzingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#9b59b6',
-    fontWeight: '500',
-  },
-  resultsContainer: {
-    marginTop: 16,
-    gap: 20,
-  },
-  expectSection: {
-    backgroundColor: '#1a0a1f',
-    borderRadius: 12,
-    padding: 20,
-    borderLeftWidth: 3,
-    borderLeftColor: '#9b59b6',
-  },
-  expectTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 12,
-  },
-  insightRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-    gap: 10,
-  },
-  insightDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#9b59b6',
-  },
-  insightText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#d0d0d0',
-  },
-  phrasingSection: {
-    gap: 12,
-  },
-  phrasingTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#a0a0b0',
-  },
-  phrasingCard: {
-    backgroundColor: '#1a0a1f',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#9b59b6',
-  },
-  phrasingText: {
-    fontSize: 15,
-    color: '#e0e0e0',
-    lineHeight: 22,
-  },
-  choicesContainer: {
-    gap: 12,
-    marginTop: 8,
-  },
-  choiceButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    borderRadius: 12,
-    gap: 8,
-  },
-  listenButton: {
-    backgroundColor: '#9b59b6',
-  },
-  waitButton: {
-    backgroundColor: '#6c3483',
-  },
-  recordButton: {
-    backgroundColor: '#27ae60',
-  },
-  choiceButtonText: {
-    fontSize: 16,
-    color: '#fff',
-    fontWeight: '600',
-  },
-  disclaimerBox: {
-    backgroundColor: '#1a0a1f',
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 8,
-  },
-  disclaimerText: {
-    fontSize: 11,
-    color: '#808080',
-    lineHeight: 16,
-    textAlign: 'center',
-  },
-  detectionsBox: {
-    backgroundColor: '#1a0a1f',
-    borderRadius: 12,
-    padding: 16,
-    borderLeftWidth: 3,
-    borderLeftColor: '#e74c3c',
-  },
-  detectionsBoxPositive: {
-    borderLeftColor: '#27ae60',
-  },
-  detectionsTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#e74c3c',
-    marginBottom: 12,
-  },
-  detectionsTitlePositive: {
-    color: '#27ae60',
-  },
-  detectionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-    gap: 8,
-  },
-  detectionLabel: {
-    fontSize: 12,
-    color: '#a0a0b0',
-    fontWeight: '500',
-  },
-  detectionBadge: {
-    backgroundColor: '#e67e22',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  detectionBadgeText: {
-    fontSize: 12,
-    color: '#fff',
-    fontWeight: '600',
-    textTransform: 'capitalize',
-  },
-  badgeHigh: {
-    backgroundColor: '#e74c3c',
-  },
-  badgeMedium: {
-    backgroundColor: '#e67e22',
-  },
-  badgePositive: {
-    backgroundColor: '#27ae60',
-  },
-  flaggedSection: {
-    marginTop: 8,
-    gap: 6,
-  },
-  flaggedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 6,
-  },
-  flaggedBullet: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#e74c3c',
-  },
-  flaggedBulletPositive: {
-    backgroundColor: '#27ae60',
-  },
-  flaggedCategory: {
-    fontSize: 13,
-    color: '#e0e0e0',
-    fontWeight: '500',
-  },
-  flaggedWords: {
-    fontSize: 12,
-    color: '#a0a0b0',
-  },
-  receivedSection: {
-    marginBottom: 20,
-  },
+  // Received messages
+  receivedSection: { marginBottom: 20 },
   receivedTitle: {
     fontSize: 16,
     fontWeight: '600',
@@ -716,32 +542,135 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 12,
   },
-  receivedCardContent: {
-    flex: 1,
-    gap: 3,
-  },
-  receivedCardLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  receivedCardMeta: {
-    fontSize: 12,
-    color: '#888',
-  },
-  receivedBadges: {
+  receivedCardContent: { flex: 1, gap: 3 },
+  receivedCardLabel: { fontSize: 14, fontWeight: '600', color: '#fff' },
+  receivedCardMeta: { fontSize: 12, color: '#888' },
+  receivedBadges: { flexDirection: 'row', gap: 6, marginTop: 4 },
+  receivedBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  receivedBadgeText: { fontSize: 11, fontWeight: '600', textTransform: 'capitalize' },
+  // Select
+  selectButton: {
     flexDirection: 'row',
-    gap: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1a1a2e',
+    borderWidth: 1,
+    borderColor: '#9b59b650',
+    padding: 18,
+    borderRadius: 12,
+    marginBottom: 24,
+    gap: 12,
+  },
+  selectButtonText: { fontSize: 16, color: '#fff', fontWeight: '600' },
+  // Analysis
+  analysisSection: {
+    alignItems: 'center',
+    padding: 32,
+    marginTop: 48,
+  },
+  analyzingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#9b59b6',
+    fontWeight: '500',
+  },
+  analyzingSubtext: {
+    marginTop: 8,
+    fontSize: 13,
+    color: '#666',
+    textAlign: 'center',
+  },
+  // Results
+  resultsContainer: { marginTop: 16, gap: 16 },
+  expectSection: {
+    backgroundColor: '#1a0a1f',
+    borderRadius: 12,
+    padding: 20,
+    borderLeftWidth: 3,
+    borderLeftColor: '#9b59b6',
+  },
+  expectTitle: { fontSize: 16, fontWeight: '600', color: '#fff', marginBottom: 12 },
+  insightRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 10 },
+  insightDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#9b59b6' },
+  insightDotPositive: { backgroundColor: '#27ae60' },
+  insightText: { flex: 1, fontSize: 14, color: '#d0d0d0' },
+  // Detections
+  detectionsBox: {
+    backgroundColor: '#1a0a1f',
+    borderRadius: 12,
+    padding: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: '#e74c3c',
+  },
+  detectionsBoxPositive: { borderLeftColor: '#27ae60' },
+  detectionsTitle: { fontSize: 14, fontWeight: '600', color: '#e74c3c', marginBottom: 12 },
+  detectionsTitlePositive: { color: '#27ae60' },
+  detectionRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
+  detectionLabel: { fontSize: 12, color: '#a0a0b0', fontWeight: '500' },
+  detectionBadge: { backgroundColor: '#e67e22', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10 },
+  detectionBadgeText: { fontSize: 12, color: '#fff', fontWeight: '600', textTransform: 'capitalize' },
+  badgeHigh: { backgroundColor: '#e74c3c' },
+  badgeMedium: { backgroundColor: '#e67e22' },
+  badgePositive: { backgroundColor: '#27ae60' },
+  flaggedSection: { marginTop: 8, gap: 6 },
+  flaggedRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  flaggedBullet: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#e74c3c' },
+  flaggedBulletPositive: { backgroundColor: '#27ae60' },
+  flaggedCategory: { fontSize: 13, color: '#e0e0e0', fontWeight: '500' },
+  flaggedCount: { fontSize: 12, color: '#a0a0b0' },
+  // Suggestions
+  suggestionsSection: { gap: 10 },
+  suggestionsTitle: { fontSize: 14, fontWeight: '500', color: '#a0a0b0' },
+  suggestionCard: {
+    backgroundColor: '#1a0a1f',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#9b59b6',
+  },
+  suggestionText: { fontSize: 15, color: '#e0e0e0', lineHeight: 22 },
+  // Choices
+  choicesContainer: { gap: 12, marginTop: 8 },
+  choiceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  listenButton: { backgroundColor: '#9b59b6' },
+  respondButton: { backgroundColor: '#27ae60' },
+  waitButton: { backgroundColor: '#6c3483' },
+  choiceButtonText: { fontSize: 16, color: '#fff', fontWeight: '600' },
+  newMessageLink: { alignItems: 'center', paddingVertical: 8 },
+  newMessageLinkText: { fontSize: 14, color: '#9b59b6' },
+  // Delete notice
+  deleteNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#0a1f0a',
+    borderRadius: 8,
+    padding: 12,
+  },
+  deleteNoticeText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#27ae60',
+    lineHeight: 17,
+  },
+  // Disclaimer
+  disclaimerBox: {
+    backgroundColor: '#1a0a1f',
+    borderRadius: 8,
+    padding: 12,
     marginTop: 4,
   },
-  receivedBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  receivedBadgeText: {
+  disclaimerText: {
     fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'capitalize',
+    color: '#808080',
+    lineHeight: 16,
+    textAlign: 'center',
   },
 });

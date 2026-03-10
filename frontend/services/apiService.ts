@@ -125,6 +125,26 @@ export const analyzeAudio = async (
   return response.json();
 };
 
+export interface GrammarFixResponse {
+  original: string;
+  corrected: string;
+  changed: boolean;
+}
+
+export const fixGrammar = async (text: string): Promise<GrammarFixResponse> => {
+  const response = await fetchWithTimeout(`${API_URL}/api/fix-grammar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Grammar fix failed (${response.status})`);
+  }
+
+  return response.json();
+};
+
 export const generateSuggestions = async (
   analysisResults: AudioAnalysisResponse,
   messageType: 'outgoing' | 'incoming'
