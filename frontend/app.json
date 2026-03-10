@@ -28,6 +28,7 @@
       "permissions": [
         "RECORD_AUDIO"
       ],
+      "googleServicesFile": "./google-services.json",
       "intentFilters": [
         {
           "action": "android.intent.action.SEND",
@@ -102,7 +103,14 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#9b59b6"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

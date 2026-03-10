@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "270141716280",
+    "project_id": "anchor-voice",
+    "storage_bucket": "anchor-voice.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:270141716280:android:821516789f22b7aaf673cd",
+        "android_client_info": {
+          "package_name": "com.anchor.voice"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDyitECgRB67OVeh1082D0x9pqQX1mjPB4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

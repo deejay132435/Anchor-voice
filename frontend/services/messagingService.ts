@@ -9,6 +9,8 @@ import {
   ensureAuth,
 } from './firebaseConfig';
 import * as FileSystem from 'expo-file-system/legacy';
+import { getPartnerDeviceId } from './pairingService';
+import { getPartnerPushToken, sendPushNotification } from './notificationService';
 
 export interface AnalysisSummary {
   severity_level: string;
@@ -72,6 +74,25 @@ export async function sendVoiceMessage(
     is_tts: false,
     deleted: false,
   });
+
+  // Send push notification to partner
+  try {
+    const partnerDeviceId = await getPartnerDeviceId(senderDeviceId);
+    if (partnerDeviceId) {
+      const partnerToken = await getPartnerPushToken(partnerDeviceId);
+      if (partnerToken) {
+        await sendPushNotification(
+          partnerToken,
+          'Anchor',
+          'New voice message from your partner',
+          { pairId, messageId }
+        );
+      }
+    }
+  } catch (err) {
+    // Non-fatal — message was still sent successfully
+    console.log('[Messaging] Push notification error:', err);
+  }
 
   return messageId;
 }
