@@ -100,34 +100,47 @@ ESCALATION_PATTERNS = {
 }
 
 # Positive patterns - words/phrases that indicate excitement, happiness, affection
+# Using non-capturing groups (?:...) for inner groups so re.findall returns clean strings
 POSITIVE_PATTERNS = {
     "affection": [
-        r"\b(i\s+love\s+you|love\s+you|i\s+miss\s+you|miss\s+you|you('re)?\s+amazing|you('re)?\s+the\s+best)\b",
-        r"\b(so\s+proud|proud\s+of\s+you|care\s+about\s+you|mean\s+so\s+much)\b",
+        r"\b(?:i\s+love\s+you|love\s+you|i\s+miss\s+you|miss\s+you|you(?:'re)?\s+amazing|you(?:'re)?\s+the\s+best)\b",
+        r"\b(?:so\s+proud|proud\s+of\s+you|care\s+about\s+you|mean\s+so\s+much)\b",
+        r"\b(?:i\s+hope\s+you(?:'re)?\s+(?:doing\s+)?(?:ok|okay|well|good|alright))\b",
+        r"\b(?:thinking\s+(?:of|about)\s+you|be\s+safe|take\s+care|stay\s+safe)\b",
     ],
     "excitement": [
-        r"\b(i\s+got\s+(the|a)|got\s+the\s+job|got\s+accepted|got\s+in|we\s+did\s+it|i\s+did\s+it)\b",
-        r"\b(so\s+excited|so\s+happy|can't\s+believe\s+it|oh\s+my\s+god|amazing|awesome|incredible|fantastic|wonderful)\b",
-        r"\b(best\s+day|best\s+news|guess\s+what|you\s+won't\s+believe)\b",
+        r"\b(?:i\s+got\s+(?:the|a)|got\s+the\s+job|got\s+accepted|got\s+in|we\s+did\s+it|i\s+did\s+it)\b",
+        r"\b(?:so\s+excited|so\s+happy|can't\s+believe\s+it|oh\s+my\s+god|amazing|awesome|incredible|fantastic|wonderful)\b",
+        r"\b(?:best\s+day|best\s+news|guess\s+what|you\s+won't\s+believe)\b",
     ],
     "gratitude": [
-        r"\b(thank\s+you|thanks\s+so\s+much|so\s+grateful|appreciate|means\s+a\s+lot|couldn't\s+have\s+done)\b",
+        r"\b(?:thank\s+you|thanks\s+so\s+much|so\s+grateful|appreciate|means\s+a\s+lot|couldn't\s+have\s+done)\b",
     ],
     "celebration": [
-        r"\b(congratulations|congrats|well\s+done|good\s+job|great\s+news|finally|we\s+made\s+it|let's\s+go)\b",
-        r"\b(cheers|hooray|woohoo|yay|yes|woo)\b",
+        r"\b(?:congratulations|congrats|well\s+done|good\s+job|great\s+news|finally|we\s+made\s+it|let's\s+go)\b",
+        r"\b(?:cheers|hooray|woohoo|yay|yes|woo)\b",
     ],
     "apology": [
-        r"\b(i('m)?\s+sorry|my\s+bad|i\s+apologize|forgive\s+me|i\s+was\s+wrong|my\s+fault)\b",
-        r"\b(you('re|r)?\s+right|i\s+shouldn't\s+have|i\s+didn't\s+mean|that\s+was\s+wrong\s+of\s+me)\b",
-        r"\b(i\s+take\s+it\s+back|i\s+regret|i\s+feel\s+bad|i\s+messed\s+up|i\s+screwed\s+up)\b",
+        r"\b(?:i(?:'m)?\s+sorry|my\s+bad|i\s+apologize|forgive\s+me|i\s+was\s+wrong|my\s+fault)\b",
+        r"\b(?:you(?:'re|r)?\s+right|i\s+shouldn't\s+have|i\s+didn't\s+mean|that\s+was\s+wrong\s+of\s+me)\b",
+        r"\b(?:i\s+take\s+it\s+back|i\s+regret|i\s+feel\s+bad|i\s+messed\s+up|i\s+screwed\s+up)\b",
     ],
     "reassurance": [
-        r"\b(it('s)?\s+okay|it('s)?\s+alright|don't\s+worry|no\s+worries|we('re)?\s+good|we('re)?\s+okay)\b",
-        r"\b(i\s+understand|i\s+hear\s+you|that\s+makes\s+sense|you('re)?\s+right|fair\s+enough)\b",
-        r"\b(let('s)?\s+work\s+(this|it)\s+out|let('s)?\s+talk|i('m)?\s+here\s+for\s+you|i\s+support\s+you)\b",
+        r"\b(?:it(?:'s)?\s+okay|it(?:'s)?\s+alright|don't\s+worry|no\s+worries|we(?:'re)?\s+good|we(?:'re)?\s+okay)\b",
+        r"\b(?:i\s+understand|i\s+hear\s+you|that\s+makes\s+sense|you(?:'re)?\s+right|fair\s+enough)\b",
+        r"\b(?:let(?:'s)?\s+work\s+(?:this|it)\s+out|let(?:'s)?\s+talk|i(?:'m)?\s+here\s+for\s+you|i\s+support\s+you)\b",
+        r"\b(?:hope\s+you(?:'re)?\s+(?:ok|okay|doing\s+ok|doing\s+okay|well|good|alright))\b",
     ],
 }
+
+
+def _find_matches(text: str, patterns: List[str]) -> List[str]:
+    """Find all regex matches in text, returning clean matched strings (no tuples)."""
+    matches = []
+    for pattern in patterns:
+        for m in re.finditer(pattern, text, re.IGNORECASE):
+            matches.append(m.group(0))
+    return matches
 
 
 def detect_positive_words(text: str) -> Dict[str, List[str]]:
@@ -142,10 +155,7 @@ def detect_positive_words(text: str) -> Dict[str, List[str]]:
     detected = {}
 
     for category, patterns in POSITIVE_PATTERNS.items():
-        matches = []
-        for pattern in patterns:
-            found = re.findall(pattern, text_lower, re.IGNORECASE)
-            matches.extend(found)
+        matches = _find_matches(text_lower, patterns)
         if matches:
             detected[category] = list(set(matches))
 
@@ -164,10 +174,7 @@ def detect_escalation_words(text: str) -> Dict[str, List[str]]:
     detected = {}
 
     for category, patterns in ESCALATION_PATTERNS.items():
-        matches = []
-        for pattern in patterns:
-            found = re.findall(pattern, text_lower, re.IGNORECASE)
-            matches.extend(found)
+        matches = _find_matches(text_lower, patterns)
         if matches:
             detected[category] = list(set(matches))
 
@@ -187,7 +194,7 @@ async def transcribe_audio(audio_data: bytes) -> Optional[str]:
         return None
 
     try:
-        client = openai.OpenAI(api_key=api_key)
+        client = openai.OpenAI(api_key=api_key, timeout=15.0)
 
         # Convert to WAV for Whisper API compatibility
         wav_data = convert_audio_to_wav(audio_data)
@@ -202,7 +209,8 @@ async def transcribe_audio(audio_data: bytes) -> Optional[str]:
                 response = client.audio.transcriptions.create(
                     model="whisper-1",
                     file=audio_file,
-                    response_format="text"
+                    response_format="text",
+                    language="en",  # Skip language detection = faster
                 )
             return response.strip() if response else None
         finally:
@@ -583,6 +591,20 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
     word_escalation = any([contains_profanity, contains_labelling, contains_blame, contains_threats])
     has_any_negative = word_escalation or contains_absolutes or contains_dismissive
 
+    # CRITICAL: When transcription is NOT available, audio alone is unreliable
+    # Warm/excited speech sounds similar to angry speech (high energy, pitch variation)
+    # Default to calm unless audio signals are extremely strong (3+ of 4 angry indicators)
+    if not transcription:
+        print("[analyze-audio] No transcription available — using conservative audio-only mode")
+        if emotion_result.get("primary_emotion") in ["angry", "frustrated", "anxious"]:
+            # Only keep non-calm classification if ALL voice indicators are firing
+            all_voice_firing = raised_voice and fast_pacing and emotional_charge
+            if not all_voice_firing:
+                emotion_result["primary_emotion"] = "calm"
+                emotion_result["confidence"] = 0.3
+                raised_voice = False
+                emotional_charge = False
+
     # If we have a transcription with no negative OR positive words, trust the words = calm
     # This prevents loud but calm-worded speech from being classified as angry
     if transcription and not has_any_negative and not has_positive:
@@ -798,6 +820,63 @@ async def _generate_suggestions_internal(
 
     is_heated = any([raised_voice, fast_pacing, emotional_charge])
     is_positive = has_positive or emotion in ["apologetic", "supportive", "excited", "affectionate", "grateful", "calm"]
+
+    # SPEED OPTIMIZATION: For calm/positive messages, return instant suggestions
+    # instead of calling Claude API (saves 3-5 seconds)
+    if is_positive and not is_heated:
+        if has_apology:
+            if message_type == "outgoing":
+                return [
+                    "I want you to know I mean this sincerely.",
+                    "I take responsibility, and I'm working on it.",
+                    "I hope we can move forward together.",
+                ]
+            else:
+                return [
+                    "Thank you for saying that. It means a lot.",
+                    "I appreciate you taking responsibility.",
+                    "I'm glad we can talk about this openly.",
+                ]
+        elif emotion in ["affectionate", "grateful", "supportive"]:
+            if message_type == "outgoing":
+                return [
+                    "Your message sounds warm and sincere. Send it as is.",
+                    "This is a great way to express how you feel.",
+                    "Simple and genuine — your partner will appreciate this.",
+                ]
+            else:
+                return [
+                    "This sounds like a caring message. Take it in.",
+                    "A warm message — enjoy the moment.",
+                    "Your partner is reaching out with love.",
+                ]
+        elif emotion == "calm":
+            if message_type == "outgoing":
+                return [
+                    "Your tone sounds calm and measured.",
+                    "This comes across as thoughtful and clear.",
+                    "You're communicating well — send when ready.",
+                ]
+            else:
+                return [
+                    "This message sounds calm and collected.",
+                    "Take your time processing what was said.",
+                    "A measured message — respond when you're ready.",
+                ]
+        else:
+            # excited, celebration, etc.
+            if message_type == "outgoing":
+                return [
+                    "Your positive energy comes through clearly!",
+                    "This is a great message to share.",
+                    "Send it — your enthusiasm is infectious.",
+                ]
+            else:
+                return [
+                    "Sounds like great news — take it in!",
+                    "What a positive message to receive.",
+                    "Share in the excitement — respond when ready.",
+                ]
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if CLAUDE_AVAILABLE and api_key:
