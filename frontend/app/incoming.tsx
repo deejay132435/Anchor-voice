@@ -12,10 +12,11 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
-import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+// Screen capture protection can be enabled for production:
+// import * as ScreenCapture from 'expo-screen-capture';
 import { analyzeAudio, AudioAnalysisResponse } from '../services/apiService';
-import { downloadVoiceMessage, markAsListened, getRecentMessages, Message } from '../services/messagingService';
+import { downloadVoiceMessage, markAsListened, getRecentMessages, deleteCachedMessage, Message } from '../services/messagingService';
 import { getOrCreateDeviceId } from '../services/deviceService';
 import { getPairInfo } from '../services/pairingService';
 
@@ -45,6 +46,12 @@ export default function IncomingScreen() {
   const [currentMessageId, setCurrentMessageId] = useState<string | null>(null);
   const [currentPairId, setCurrentPairId] = useState<string | null>(null);
   const [hasListened, setHasListened] = useState(false);
+
+  // TODO: Enable for production — prevents screenshots/screen recording
+  // useEffect(() => {
+  //   ScreenCapture.preventScreenCaptureAsync();
+  //   return () => { ScreenCapture.allowScreenCaptureAsync(); };
+  // }, []);
 
   useEffect(() => {
     if (isInAppMessage) {
@@ -124,24 +131,6 @@ export default function IncomingScreen() {
     }
   };
 
-  const pickAudioFile = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: 'audio/*',
-        copyToCacheDirectory: true,
-      });
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        setAudioUri(asset.uri);
-        setCurrentMessageId(null); // Not an in-app message
-        await analyzeIncomingAudio(asset.uri);
-      }
-    } catch (error) {
-      console.error('Error picking audio file:', error);
-      Alert.alert('Error', 'Failed to select audio file.');
-    }
-  };
-
   const analyzeIncomingAudio = async (uri: string) => {
     setIsAnalyzing(true);
     setHasAnalyzed(false);
@@ -215,6 +204,8 @@ export default function IncomingScreen() {
             try {
               const myDeviceId = deviceId || await getOrCreateDeviceId();
               await markAsListened(pId, msgId, myDeviceId);
+              // Delete local cached file immediately after listening
+              await deleteCachedMessage(msgId);
               // Remove from received list
               setReceivedMessages((prev) => prev.filter((m) => m.id !== msgId));
             } catch (err) {
@@ -327,17 +318,7 @@ export default function IncomingScreen() {
           </View>
         )}
 
-        {/* Select Audio File */}
-        {!audioUri && !isAnalyzing && (
-          <TouchableOpacity
-            style={styles.selectButton}
-            onPress={pickAudioFile}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="folder-open" size={24} color="#fff" />
-            <Text style={styles.selectButtonText}>Select Voice Message</Text>
-          </TouchableOpacity>
-        )}
+        {/* No external file selection — messages stay in-app only */}
 
         {/* Loading */}
         {isAnalyzing && (
@@ -548,20 +529,6 @@ const styles = StyleSheet.create({
   receivedBadges: { flexDirection: 'row', gap: 6, marginTop: 4 },
   receivedBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   receivedBadgeText: { fontSize: 11, fontWeight: '600', textTransform: 'capitalize' },
-  // Select
-  selectButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1a1a2e',
-    borderWidth: 1,
-    borderColor: '#9b59b650',
-    padding: 18,
-    borderRadius: 12,
-    marginBottom: 24,
-    gap: 12,
-  },
-  selectButtonText: { fontSize: 16, color: '#fff', fontWeight: '600' },
   // Analysis
   analysisSection: {
     alignItems: 'center',

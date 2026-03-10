@@ -141,7 +141,7 @@ export function subscribeToMessages(
   };
 }
 
-/** Download a voice message audio to local cache */
+/** Download a voice message audio to app-private cache (no system file manager involvement) */
 export async function downloadVoiceMessage(audioUrl: string, messageId: string): Promise<string> {
   const cacheDir = (FileSystem as any).cacheDirectory || (FileSystem as any).documentDirectory || '';
   const localPath = `${cacheDir}message_${messageId}.m4a`;
@@ -152,8 +152,42 @@ export async function downloadVoiceMessage(audioUrl: string, messageId: string):
     return localPath;
   }
 
-  const downloadResult = await FileSystem.downloadAsync(audioUrl, localPath);
-  return downloadResult.uri;
+  // Fetch in-memory then write to app-private cache
+  // (FileSystem.downloadAsync can trigger system download manager on some Android devices)
+  const response = await fetch(audioUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to download message (${response.status})`);
+  }
+  const blob = await response.blob();
+  const reader = new (globalThis as any).FileReader();
+  const base64Data: string = await new Promise((resolve, reject) => {
+    reader.onloadend = () => {
+      const result = (reader.result as string).split(',')[1];
+      resolve(result);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
+  await FileSystem.writeAsStringAsync(localPath, base64Data, {
+    encoding: (FileSystem as any).EncodingType.Base64,
+  });
+
+  return localPath;
+}
+
+/** Delete a cached voice message file */
+export async function deleteCachedMessage(messageId: string): Promise<void> {
+  const cacheDir = (FileSystem as any).cacheDirectory || (FileSystem as any).documentDirectory || '';
+  const localPath = `${cacheDir}message_${messageId}.m4a`;
+  try {
+    const fileInfo = await FileSystem.getInfoAsync(localPath);
+    if (fileInfo.exists) {
+      await FileSystem.deleteAsync(localPath, { idempotent: true });
+    }
+  } catch {
+    // Non-fatal
+  }
 }
 
 /** Mark a message as listened by the receiver, then check for auto-delete */
