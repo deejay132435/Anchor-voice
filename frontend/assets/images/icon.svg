@@ -1,32 +1,64 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#1a0a2e"/>
-      <stop offset="100%" stop-color="#0a0a14"/>
+      <stop offset="50%" stop-color="#0d0d1a"/>
+      <stop offset="100%" stop-color="#1a0a2e"/>
     </linearGradient>
   </defs>
 
   <!-- Background -->
   <rect width="1024" height="1024" rx="220" fill="url(#bg)"/>
 
-  <!-- ANCHOR - uniform bright purple, no glow behind -->
-  <g transform="translate(512, 512)" fill="none" stroke="#c89bdf" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
-    <!-- Top ring -->
-    <circle cx="0" cy="-280" r="55" fill="none"/>
-
-    <!-- Vertical shaft -->
-    <line x1="0" y1="-225" x2="0" y2="230"/>
-
+  <!-- LAYER 1: Purple anchor BEHIND (inverted, pulling down) -->
+  <g transform="translate(512, 560) scale(1,-1)" fill="none" stroke="#9b59b6" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Ring (appears at bottom) -->
+    <circle cx="0" cy="-200" r="40" fill="none"/>
+    <!-- Shaft -->
+    <line x1="0" y1="-160" x2="0" y2="160"/>
     <!-- Cross bar -->
-    <line x1="-140" y1="-90" x2="140" y2="-90"/>
-
-    <!-- Left hook -->
-    <path d="M-190 120 Q-190 230 -80 230" fill="none"/>
-
+    <line x1="-100" y1="-50" x2="100" y2="-50"/>
+    <!-- Left hook - curls around yellow shaft area -->
+    <path d="M-130 80 Q-130 170 -20 170" fill="none"/>
     <!-- Right hook -->
-    <path d="M190 120 Q190 230 80 230" fill="none"/>
-
+    <path d="M130 80 Q130 170 20 170" fill="none"/>
     <!-- Bottom point -->
-    <circle cx="0" cy="230" r="12" fill="#c89bdf"/>
+    <circle cx="0" cy="160" r="9" fill="#9b59b6"/>
+  </g>
+
+  <!-- LAYER 2: Yellow anchor IN FRONT (upright, pulling up) -->
+  <g transform="translate(512, 464)" fill="none" stroke="#f1c40f" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Ring (at top) -->
+    <circle cx="0" cy="-200" r="40" fill="none"/>
+    <!-- Shaft - upper portion only (above interlock) -->
+    <line x1="0" y1="-160" x2="0" y2="40"/>
+    <!-- Cross bar -->
+    <line x1="-100" y1="-50" x2="100" y2="-50"/>
+    <!-- Left hook - curls around purple shaft -->
+    <path d="M-130 80 Q-130 170 -20 170" fill="none"/>
+    <!-- Right hook -->
+    <path d="M130 80 Q130 170 20 170" fill="none"/>
+    <!-- Bottom point -->
+    <circle cx="0" cy="160" r="9" fill="#f1c40f"/>
+  </g>
+
+  <!-- LAYER 3: Yellow shaft BEHIND purple hooks at interlock zone -->
+  <!-- (Yellow shaft continues through but purple hooks pass in front) -->
+  <g fill="none" stroke="#f1c40f" stroke-width="34" stroke-linecap="round">
+    <!-- Yellow shaft lower portion (behind purple crossbar) -->
+    <line x1="512" y1="544" x2="512" y2="624"/>
+  </g>
+
+  <!-- LAYER 4: Purple crossbar and hooks pass IN FRONT of yellow shaft at interlock -->
+  <g transform="translate(512, 560) scale(1,-1)" fill="none" stroke="#9b59b6" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Re-draw purple hooks over yellow shaft for interlock effect -->
+    <path d="M-130 80 Q-130 170 -20 170" fill="none"/>
+    <path d="M130 80 Q130 170 20 170" fill="none"/>
+  </g>
+
+  <!-- LAYER 5: Yellow hooks pass IN FRONT of purple shaft -->
+  <g transform="translate(512, 464)" fill="none" stroke="#f1c40f" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M-130 80 Q-130 170 -20 170" fill="none"/>
+    <path d="M130 80 Q130 170 20 170" fill="none"/>
   </g>
 </svg>

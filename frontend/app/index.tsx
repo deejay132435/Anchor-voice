@@ -7,15 +7,58 @@ import {
   StatusBar,
   ScrollView,
   Alert,
+  Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Circle, Line, Path, Defs, LinearGradient, Stop, G } from 'react-native-svg';
 import { getOrCreateDeviceId } from '../services/deviceService';
 import { getPairInfo, unpair } from '../services/pairingService';
 import { ref, onValue } from 'firebase/database';
 import { database } from '../services/firebaseConfig';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+function AnchorLogo({ size = 300, opacity = 0.12 }: { size?: number; opacity?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 1024 1024" opacity={opacity}>
+      {/* Layer 1: Purple anchor behind (inverted, pulling down) */}
+      <G transform="translate(512, 560) scale(1,-1)" fill="none" stroke="#9b59b6" strokeWidth="34" strokeLinecap="round" strokeLinejoin="round">
+        <Circle cx={0} cy={-200} r={40} fill="none" />
+        <Line x1={0} y1={-160} x2={0} y2={160} />
+        <Line x1={-100} y1={-50} x2={100} y2={-50} />
+        <Path d="M-130 80 Q-130 170 -20 170" fill="none" />
+        <Path d="M130 80 Q130 170 20 170" fill="none" />
+        <Circle cx={0} cy={160} r={9} fill="#9b59b6" />
+      </G>
+      {/* Layer 2: Yellow anchor in front (upright, pulling up) */}
+      <G transform="translate(512, 464)" fill="none" stroke="#f1c40f" strokeWidth="34" strokeLinecap="round" strokeLinejoin="round">
+        <Circle cx={0} cy={-200} r={40} fill="none" />
+        <Line x1={0} y1={-160} x2={0} y2={40} />
+        <Line x1={-100} y1={-50} x2={100} y2={-50} />
+        <Path d="M-130 80 Q-130 170 -20 170" fill="none" />
+        <Path d="M130 80 Q130 170 20 170" fill="none" />
+        <Circle cx={0} cy={160} r={9} fill="#f1c40f" />
+      </G>
+      {/* Layer 3: Yellow shaft lower portion behind purple hooks */}
+      <G fill="none" stroke="#f1c40f" strokeWidth="34" strokeLinecap="round">
+        <Line x1={512} y1={544} x2={512} y2={624} />
+      </G>
+      {/* Layer 4: Purple hooks in front of yellow shaft */}
+      <G transform="translate(512, 560) scale(1,-1)" fill="none" stroke="#9b59b6" strokeWidth="36" strokeLinecap="round" strokeLinejoin="round">
+        <Path d="M-130 80 Q-130 170 -20 170" fill="none" />
+        <Path d="M130 80 Q130 170 20 170" fill="none" />
+      </G>
+      {/* Layer 5: Yellow hooks in front of purple shaft */}
+      <G transform="translate(512, 464)" fill="none" stroke="#f1c40f" strokeWidth="36" strokeLinecap="round" strokeLinejoin="round">
+        <Path d="M-130 80 Q-130 170 -20 170" fill="none" />
+        <Path d="M130 80 Q130 170 20 170" fill="none" />
+      </G>
+    </Svg>
+  );
+}
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -97,12 +140,15 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
 
+      {/* Faded background logo */}
+      <View style={styles.backgroundLogo}>
+        <AnchorLogo size={SCREEN_WIDTH * 0.9} opacity={0.08} />
+      </View>
+
       <ScrollView contentContainerStyle={styles.content} bounces={false}>
         {/* Header */}
         <View style={styles.header}>
-          <View style={styles.iconContainer}>
-            <View style={styles.verticalLine} />
-          </View>
+          <AnchorLogo size={64} opacity={1} />
           <Text style={styles.title}>Anchor</Text>
           <Text style={styles.subtitle}>
             How do I say this without making it worse?
@@ -156,7 +202,7 @@ export default function HomeScreen() {
             activeOpacity={0.8}
           >
             <View style={styles.buttonContent}>
-              <Ionicons name="mic" size={28} color="#fff" />
+              <Ionicons name="mic" size={28} color="#f1c40f" />
               <Text style={styles.buttonTitle}>Prepare Message</Text>
               <Text style={styles.buttonDescription}>
                 Record or type, get analysis and suggestions, listen before sending
@@ -172,7 +218,7 @@ export default function HomeScreen() {
           >
             <View style={styles.buttonContent}>
               <View style={styles.listenIconContainer}>
-                <Ionicons name="headset" size={28} color="#fff" />
+                <Ionicons name="headset" size={28} color="#f1c40f" />
                 {unreadCount > 0 && (
                   <View style={styles.unreadBadge}>
                     <Text style={styles.unreadText}>{unreadCount}</Text>
@@ -204,27 +250,24 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0a0a0a',
   },
+  backgroundLogo: {
+    position: 'absolute',
+    top: SCREEN_HEIGHT * 0.15,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 0,
+  },
   content: {
     flexGrow: 1,
     padding: 20,
     paddingBottom: 32,
+    zIndex: 1,
   },
   header: {
     alignItems: 'center',
     marginTop: 8,
     marginBottom: 24,
-  },
-  iconContainer: {
-    width: 48,
-    height: 48,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  verticalLine: {
-    width: 4,
-    height: 36,
-    backgroundColor: '#f1c40f',
-    borderRadius: 2,
   },
   title: {
     fontSize: 32,

@@ -89,7 +89,7 @@ ESCALATION_PATTERNS = {
         r"\b(idiot|stupid|dumb|crazy|insane|pathetic|loser|worthless)\b",
     ],
     "threats": [
-        r"\b(or\s+else|you('ll)?\s+regret|watch\s+(out|yourself)|i('ll)?\s+make\s+you)\b",
+        r"\b(or\s+else|you(?:'?ll)?\s+regret|watch\s+(out|yourself)|i(?:'?ll)?\s+make\s+you)\b",
     ],
     "dismissive": [
         r"\b(whatever|don't\s+care|shut\s+up|who\s+cares|so\s+what)\b",
@@ -103,33 +103,33 @@ ESCALATION_PATTERNS = {
 # Using non-capturing groups (?:...) for inner groups so re.findall returns clean strings
 POSITIVE_PATTERNS = {
     "affection": [
-        r"\b(?:i\s+love\s+you|love\s+you|i\s+miss\s+you|miss\s+you|you(?:'re)?\s+amazing|you(?:'re)?\s+the\s+best)\b",
+        r"\b(?:i\s+love\s+you|love\s+you|i\s+miss\s+you|miss\s+you|you(?:'?re)?\s+amazing|you(?:'?re)?\s+the\s+best)\b",
         r"\b(?:so\s+proud|proud\s+of\s+you|care\s+about\s+you|mean\s+so\s+much)\b",
-        r"\b(?:i\s+hope\s+you(?:'re)?\s+(?:doing\s+)?(?:ok|okay|well|good|alright))\b",
+        r"\b(?:i\s+hope\s+you(?:'?re)?\s+(?:doing\s+)?(?:ok|okay|well|good|alright))\b",
         r"\b(?:thinking\s+(?:of|about)\s+you|be\s+safe|take\s+care|stay\s+safe)\b",
     ],
     "excitement": [
         r"\b(?:i\s+got\s+(?:the|a)|got\s+the\s+job|got\s+accepted|got\s+in|we\s+did\s+it|i\s+did\s+it)\b",
-        r"\b(?:so\s+excited|so\s+happy|can't\s+believe\s+it|oh\s+my\s+god|amazing|awesome|incredible|fantastic|wonderful)\b",
-        r"\b(?:best\s+day|best\s+news|guess\s+what|you\s+won't\s+believe)\b",
+        r"\b(?:so\s+excited|so\s+happy|can'?t\s+believe\s+it|oh\s+my\s+god|amazing|awesome|incredible|fantastic|wonderful)\b",
+        r"\b(?:best\s+day|best\s+news|guess\s+what|you\s+won'?t\s+believe)\b",
     ],
     "gratitude": [
-        r"\b(?:thank\s+you|thanks\s+so\s+much|so\s+grateful|appreciate|means\s+a\s+lot|couldn't\s+have\s+done)\b",
+        r"\b(?:thank\s+you|thanks\s+so\s+much|so\s+grateful|appreciate|means\s+a\s+lot|couldn'?t\s+have\s+done)\b",
     ],
     "celebration": [
-        r"\b(?:congratulations|congrats|well\s+done|good\s+job|great\s+news|finally|we\s+made\s+it|let's\s+go)\b",
+        r"\b(?:congratulations|congrats|well\s+done|good\s+job|great\s+news|finally|we\s+made\s+it|let'?s\s+go)\b",
         r"\b(?:cheers|hooray|woohoo|yay|yes|woo)\b",
     ],
     "apology": [
-        r"\b(?:i(?:'m)?\s+sorry|my\s+bad|i\s+apologize|forgive\s+me|i\s+was\s+wrong|my\s+fault)\b",
-        r"\b(?:you(?:'re|r)?\s+right|i\s+shouldn't\s+have|i\s+didn't\s+mean|that\s+was\s+wrong\s+of\s+me)\b",
+        r"\b(?:i(?:'?m)?\s+sorry|my\s+bad|i\s+apologize|forgive\s+me|i\s+was\s+wrong|my\s+fault)\b",
+        r"\b(?:you(?:'?re|r)?\s+right|i\s+shouldn'?t\s+have|i\s+didn'?t\s+mean|that\s+was\s+wrong\s+of\s+me)\b",
         r"\b(?:i\s+take\s+it\s+back|i\s+regret|i\s+feel\s+bad|i\s+messed\s+up|i\s+screwed\s+up)\b",
     ],
     "reassurance": [
-        r"\b(?:it(?:'s)?\s+okay|it(?:'s)?\s+alright|don't\s+worry|no\s+worries|we(?:'re)?\s+good|we(?:'re)?\s+okay)\b",
-        r"\b(?:i\s+understand|i\s+hear\s+you|that\s+makes\s+sense|you(?:'re)?\s+right|fair\s+enough)\b",
-        r"\b(?:let(?:'s)?\s+work\s+(?:this|it)\s+out|let(?:'s)?\s+talk|i(?:'m)?\s+here\s+for\s+you|i\s+support\s+you)\b",
-        r"\b(?:hope\s+you(?:'re)?\s+(?:ok|okay|doing\s+ok|doing\s+okay|well|good|alright))\b",
+        r"\b(?:it(?:'?s)?\s+okay|it(?:'?s)?\s+alright|don'?t\s+worry|no\s+worries|we(?:'?re)?\s+good|we(?:'?re)?\s+okay)\b",
+        r"\b(?:i\s+understand|i\s+hear\s+you|that\s+makes\s+sense|you(?:'?re)?\s+right|fair\s+enough)\b",
+        r"\b(?:let(?:'?s)?\s+work\s+(?:this|it)\s+out|let(?:'?s)?\s+talk|i(?:'?m)?\s+here\s+for\s+you|i\s+support\s+you)\b",
+        r"\b(?:hope\s+you(?:'?re)?\s+(?:ok|okay|doing\s+ok|doing\s+okay|well|good|alright))\b",
     ],
 }
 
