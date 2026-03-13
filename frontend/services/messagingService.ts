@@ -152,26 +152,12 @@ export async function downloadVoiceMessage(audioUrl: string, messageId: string):
     return localPath;
   }
 
-  // Fetch in-memory then write to app-private cache
-  // (FileSystem.downloadAsync can trigger system download manager on some Android devices)
-  const response = await fetch(audioUrl);
-  if (!response.ok) {
-    throw new Error(`Failed to download message (${response.status})`);
+  // Use FileSystem.downloadAsync for simple GET downloads from Firebase Storage
+  // This writes directly to the app-private cache directory without triggering system download manager
+  const downloadResult = await FileSystem.downloadAsync(audioUrl, localPath);
+  if (downloadResult.status !== 200) {
+    throw new Error(`Failed to download message (${downloadResult.status})`);
   }
-  const blob = await response.blob();
-  const reader = new (globalThis as any).FileReader();
-  const base64Data: string = await new Promise((resolve, reject) => {
-    reader.onloadend = () => {
-      const result = (reader.result as string).split(',')[1];
-      resolve(result);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-
-  await FileSystem.writeAsStringAsync(localPath, base64Data, {
-    encoding: (FileSystem as any).EncodingType.Base64,
-  });
 
   return localPath;
 }
