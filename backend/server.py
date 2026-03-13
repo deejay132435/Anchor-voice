@@ -1107,11 +1107,11 @@ async def text_to_speech(req: TtsRequest):
         }
 
     except openai.APIError as e:
-        print(f"OpenAI TTS API error: {e}")
-        raise HTTPException(status_code=502, detail="TTS generation failed")
+        print(f"OpenAI TTS API error: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=502, detail=f"TTS API error: {type(e).__name__}: {str(e)[:200]}")
     except Exception as e:
-        print(f"TTS error: {e}")
-        raise HTTPException(status_code=500, detail="TTS generation failed")
+        print(f"TTS error: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail=f"TTS error: {type(e).__name__}: {str(e)[:200]}")
 
 
 app.include_router(api)
