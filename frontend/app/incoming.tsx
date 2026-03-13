@@ -105,10 +105,16 @@ export default function IncomingScreen() {
         setIsAnalyzing(true);
         const localUri = await downloadVoiceMessage(msg.audioUrl, msg.id);
         setAudioUri(localUri);
-        await analyzeIncomingAudio(localUri);
+        // Analysis is best-effort — playback works even if it fails
+        try {
+          await analyzeIncomingAudio(localUri);
+        } catch (err) {
+          console.log('[Incoming] Analysis error (non-fatal):', err);
+          setIsAnalyzing(false);
+        }
       } catch (err) {
-        console.log('[Incoming] Message load error:', err);
-        Alert.alert('Error', 'Could not load message.');
+        console.log('[Incoming] Message download error:', err);
+        Alert.alert('Download Error', `Could not download message: ${err instanceof Error ? err.message : 'Unknown error'}`);
         setIsAnalyzing(false);
       }
     };
@@ -123,10 +129,15 @@ export default function IncomingScreen() {
       setIsAnalyzing(true);
       const localUri = await downloadVoiceMessage(inAppAudioUrl, inAppMessageId);
       setAudioUri(localUri);
-      await analyzeIncomingAudio(localUri);
+      try {
+        await analyzeIncomingAudio(localUri);
+      } catch (err) {
+        console.log('[Incoming] Analysis error (non-fatal):', err);
+        setIsAnalyzing(false);
+      }
     } catch (err) {
       console.log('[Incoming] Download error:', err);
-      Alert.alert('Error', 'Could not download message.');
+      Alert.alert('Download Error', `Could not download message: ${err instanceof Error ? err.message : 'Unknown error'}`);
       setIsAnalyzing(false);
     }
   };
@@ -320,12 +331,73 @@ export default function IncomingScreen() {
 
         {/* No external file selection — messages stay in-app only */}
 
-        {/* Loading */}
+        {/* Loading — but still show play button if audio is ready */}
         {isAnalyzing && (
           <View style={styles.analysisSection}>
             <ActivityIndicator size="large" color="#9b59b6" />
             <Text style={styles.analyzingText}>Preparing analysis...</Text>
             <Text style={styles.analyzingSubtext}>You{"'"}ll see the analysis before hearing the message</Text>
+            {audioUri && (
+              <TouchableOpacity
+                style={[styles.choiceButton, styles.listenButton, { marginTop: 20 }]}
+                onPress={playAudio}
+                activeOpacity={0.8}
+              >
+                <Ionicons name={isPlaying ? "pause" : "play"} size={20} color="#fff" />
+                <Text style={styles.choiceButtonText}>
+                  {isPlaying ? 'Pause' : 'Listen now'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {/* Audio ready but analysis failed — still let user listen */}
+        {audioUri && !isAnalyzing && !hasAnalyzed && (
+          <View style={styles.resultsContainer}>
+            <View style={styles.expectSection}>
+              <Text style={styles.expectTitle}>Message ready</Text>
+              <Text style={styles.insightText}>Analysis unavailable — you can still listen.</Text>
+            </View>
+            <View style={styles.choicesContainer}>
+              <TouchableOpacity
+                style={[styles.choiceButton, styles.listenButton]}
+                onPress={playAudio}
+                activeOpacity={0.8}
+              >
+                <Ionicons name={isPlaying ? "pause" : "play"} size={20} color="#fff" />
+                <Text style={styles.choiceButtonText}>
+                  {isPlaying ? 'Pause' : hasListened ? 'Listen again' : 'Listen now'}
+                </Text>
+              </TouchableOpacity>
+
+              {hasListened && (
+                <TouchableOpacity
+                  style={[styles.choiceButton, styles.respondButton]}
+                  onPress={handleRecordResponse}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="mic" size={20} color="#fff" />
+                  <Text style={styles.choiceButtonText}>Prepare a response</Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity
+                style={[styles.choiceButton, styles.waitButton]}
+                onPress={handleGoBack}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.choiceButtonText}>
+                  {hasListened ? 'Done' : 'Not now'}
+                </Text>
+              </TouchableOpacity>
+
+              {hasListened && (
+                <TouchableOpacity style={styles.newMessageLink} onPress={handleNewMessage}>
+                  <Text style={styles.newMessageLinkText}>Open another message</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         )}
 
