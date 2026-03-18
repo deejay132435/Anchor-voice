@@ -1,6 +1,15 @@
+import * as ExpoCrypto from 'expo-crypto';
 import nacl from 'tweetnacl';
 import { encodeBase64, decodeBase64 } from 'tweetnacl-util';
 import * as SecureStore from 'expo-secure-store';
+
+// Polyfill PRNG for tweetnacl — React Native lacks crypto.getRandomValues
+nacl.setPRNG((x: Uint8Array, n: number) => {
+  const randomBytes = ExpoCrypto.getRandomBytes(n);
+  for (let i = 0; i < n; i++) {
+    x[i] = randomBytes[i];
+  }
+});
 
 const PUBLIC_KEY_STORE = 'anchor_nacl_public_key';
 const SECRET_KEY_STORE = 'anchor_nacl_secret_key';
