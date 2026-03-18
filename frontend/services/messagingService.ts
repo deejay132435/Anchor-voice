@@ -9,8 +9,10 @@ import {
   ensureAuth,
 } from './firebaseConfig';
 import * as FileSystem from 'expo-file-system/legacy';
-import { getPartnerDeviceId } from './pairingService';
+import { getPartnerDeviceId, getPartnerPublicKey, getSenderPublicKey } from './pairingService';
 import { getPartnerPushToken, sendPushNotification } from './notificationService';
+import { encryptAudio, decryptAudio } from './cryptoService';
+import { encodeBase64, decodeBase64 } from 'tweetnacl-util';
 
 export interface AnalysisSummary {
   severity_level: string;
@@ -30,6 +32,7 @@ export interface Message {
   listenedByReceiver: boolean;
   isTts: boolean;
   deleted: boolean;
+  encrypted: boolean;
 }
 
 /** Upload audio file and create message record */
@@ -48,14 +51,35 @@ export async function sendVoiceMessage(
   const newMsgRef = push(messagesRef);
   const messageId = newMsgRef.key!;
 
-  // Upload audio to Firebase Storage using fetch blob (memory-efficient)
-  const response = await fetch(audioUri);
-  const blob = await response.blob();
+  // Check if E2E encryption is available (partner has a public key)
+  const partnerPublicKey = await getPartnerPublicKey(senderDeviceId);
+  const isEncrypted = !!partnerPublicKey;
 
-  const audioStorageRef = storageRef(storage, `pairs/${pairId}/${messageId}.m4a`);
-  await uploadBytes(audioStorageRef, blob, { contentType: 'audio/mp4' });
+  let downloadUrl: string;
+  let storageExtension: string;
 
-  const downloadUrl = await getDownloadURL(audioStorageRef);
+  if (isEncrypted) {
+    // Read audio as bytes, encrypt, then upload
+    const base64Audio = await FileSystem.readAsStringAsync(audioUri, { encoding: 'base64' });
+    const plainBytes = decodeBase64(base64Audio);
+    const encryptedBytes = await encryptAudio(plainBytes, partnerPublicKey);
+    const encryptedBase64 = encodeBase64(encryptedBytes);
+
+    // Convert base64 to blob for upload
+    const encBlob = await fetch(`data:application/octet-stream;base64,${encryptedBase64}`).then(r => r.blob());
+    storageExtension = '.enc';
+    const audioStorageRef = storageRef(storage, `pairs/${pairId}/${messageId}${storageExtension}`);
+    await uploadBytes(audioStorageRef, encBlob, { contentType: 'application/octet-stream' });
+    downloadUrl = await getDownloadURL(audioStorageRef);
+  } else {
+    // Fallback: unencrypted upload for pre-encryption pairs
+    const response = await fetch(audioUri);
+    const blob = await response.blob();
+    storageExtension = '.m4a';
+    const audioStorageRef = storageRef(storage, `pairs/${pairId}/${messageId}${storageExtension}`);
+    await uploadBytes(audioStorageRef, blob, { contentType: 'audio/mp4' });
+    downloadUrl = await getDownloadURL(audioStorageRef);
+  }
 
   // Write message metadata
   await set(newMsgRef, {
@@ -73,6 +97,7 @@ export async function sendVoiceMessage(
     listened_by_receiver: false,
     is_tts: false,
     deleted: false,
+    encrypted: isEncrypted,
   });
 
   // Send push notification to partner
@@ -121,6 +146,7 @@ export function subscribeToMessages(
     listenedByReceiver: data.listened_by_receiver,
     isTts: data.is_tts || false,
     deleted: data.deleted || false,
+    encrypted: data.encrypted || false,
   });
 
   const unsubAdded = onChildAdded(messagesRef, (snapshot) => {
@@ -141,19 +167,55 @@ export function subscribeToMessages(
   };
 }
 
-/** Download a voice message audio to app-private cache (no system file manager involvement) */
-export async function downloadVoiceMessage(audioUrl: string, messageId: string): Promise<string> {
+/** Download a voice message audio to app-private cache, decrypting if E2E encrypted */
+export async function downloadVoiceMessage(
+  audioUrl: string,
+  messageId: string,
+  senderDeviceId?: string,
+  pairId?: string,
+  encrypted?: boolean
+): Promise<string> {
   const cacheDir = (FileSystem as any).cacheDirectory || (FileSystem as any).documentDirectory || '';
   const localPath = `${cacheDir}message_${messageId}.m4a`;
 
-  // Check if already cached
+  // Check if already cached (decrypted)
   const fileInfo = await FileSystem.getInfoAsync(localPath);
   if (fileInfo.exists) {
     return localPath;
   }
 
-  // Use FileSystem.downloadAsync for simple GET downloads from Firebase Storage
-  // This writes directly to the app-private cache directory without triggering system download manager
+  if (encrypted && senderDeviceId && pairId) {
+    // Download encrypted file to temp path
+    const encPath = `${cacheDir}message_${messageId}.enc`;
+    const downloadResult = await FileSystem.downloadAsync(audioUrl, encPath);
+    if (downloadResult.status !== 200) {
+      throw new Error(`Failed to download message (${downloadResult.status})`);
+    }
+
+    // Read encrypted bytes
+    const encBase64 = await FileSystem.readAsStringAsync(encPath, { encoding: 'base64' });
+    const encBytes = decodeBase64(encBase64);
+
+    // Get sender's public key from the pair record
+    const senderPublicKey = await getSenderPublicKey(senderDeviceId, pairId);
+    if (!senderPublicKey) {
+      throw new Error('Cannot decrypt: sender public key not found');
+    }
+
+    // Decrypt
+    const decryptedBytes = await decryptAudio(encBytes, senderPublicKey);
+    const decryptedBase64 = encodeBase64(decryptedBytes);
+
+    // Write decrypted audio
+    await FileSystem.writeAsStringAsync(localPath, decryptedBase64, { encoding: 'base64' });
+
+    // Clean up encrypted temp file
+    await FileSystem.deleteAsync(encPath, { idempotent: true });
+
+    return localPath;
+  }
+
+  // Unencrypted fallback
   const downloadResult = await FileSystem.downloadAsync(audioUrl, localPath);
   if (downloadResult.status !== 200) {
     throw new Error(`Failed to download message (${downloadResult.status})`);
@@ -209,12 +271,20 @@ async function checkAndAutoDelete(pairId: string, messageId: string): Promise<vo
   const data = snapshot.val();
 
   if (data.listened_by_sender && data.listened_by_receiver && !data.deleted) {
-    // Delete audio from Firebase Storage
+    // Delete audio from Firebase Storage (try both encrypted and unencrypted paths)
+    const ext = data.encrypted ? '.enc' : '.m4a';
     try {
-      const audioRef = storageRef(storage, `pairs/${pairId}/${messageId}.m4a`);
+      const audioRef = storageRef(storage, `pairs/${pairId}/${messageId}${ext}`);
       await deleteObject(audioRef);
     } catch {
-      // File may already be deleted
+      // File may already be deleted — also try the other extension as fallback
+      try {
+        const fallbackExt = ext === '.enc' ? '.m4a' : '.enc';
+        const fallbackRef = storageRef(storage, `pairs/${pairId}/${messageId}${fallbackExt}`);
+        await deleteObject(fallbackRef);
+      } catch {
+        // File already deleted
+      }
     }
 
     // Mark as deleted in database
@@ -252,6 +322,7 @@ export async function getRecentMessages(pairId: string, limit: number = 50): Pro
       listenedByReceiver: data.listened_by_receiver,
       isTts: data.is_tts || false,
       deleted: data.deleted || false,
+      encrypted: data.encrypted || false,
     });
   });
 

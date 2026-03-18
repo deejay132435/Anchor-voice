@@ -37,6 +37,8 @@ export default function IncomingScreen() {
   const inAppMessageId = params.messageId as string | undefined;
   const inAppPairId = params.pairId as string | undefined;
   const inAppAudioUrl = params.audioUrl as string | undefined;
+  const inAppSender = params.sender as string | undefined;
+  const inAppEncrypted = params.encrypted === 'true';
   const isInAppMessage = !!(inAppMessageId && inAppPairId && inAppAudioUrl);
 
   // Received messages
@@ -103,7 +105,7 @@ export default function IncomingScreen() {
     const loadMsg = async () => {
       try {
         setIsAnalyzing(true);
-        const localUri = await downloadVoiceMessage(msg.audioUrl, msg.id);
+        const localUri = await downloadVoiceMessage(msg.audioUrl, msg.id, msg.sender, currentPairId || undefined, msg.encrypted);
         setAudioUri(localUri);
         // Analysis is best-effort — playback works even if it fails
         try {
@@ -127,7 +129,7 @@ export default function IncomingScreen() {
     setCurrentPairId(inAppPairId || null);
     try {
       setIsAnalyzing(true);
-      const localUri = await downloadVoiceMessage(inAppAudioUrl, inAppMessageId);
+      const localUri = await downloadVoiceMessage(inAppAudioUrl, inAppMessageId, inAppSender, inAppPairId, inAppEncrypted);
       setAudioUri(localUri);
       try {
         await analyzeIncomingAudio(localUri);
@@ -283,8 +285,16 @@ export default function IncomingScreen() {
           </View>
         )}
 
+        {/* Loading messages */}
+        {!audioUri && !isAnalyzing && loadingMessages && (
+          <View style={styles.analysisSection}>
+            <ActivityIndicator size="large" color="#9b59b6" />
+            <Text style={styles.analyzingText}>Checking for messages...</Text>
+          </View>
+        )}
+
         {/* Received Messages */}
-        {!audioUri && !isAnalyzing && receivedMessages.length > 0 && (
+        {!audioUri && !isAnalyzing && !loadingMessages && receivedMessages.length > 0 && (
           <View style={styles.receivedSection}>
             <Text style={styles.receivedTitle}>
               <Ionicons name="mail-unread" size={16} color="#f1c40f" /> New from Partner
@@ -329,7 +339,32 @@ export default function IncomingScreen() {
           </View>
         )}
 
-        {/* No external file selection — messages stay in-app only */}
+        {/* Empty state — no messages */}
+        {!audioUri && !isAnalyzing && !loadingMessages && receivedMessages.length === 0 && !isInAppMessage && (
+          <View style={styles.emptyState}>
+            <Ionicons name="mail-open-outline" size={48} color="#666" />
+            <Text style={styles.emptyStateTitle}>No new messages</Text>
+            <Text style={styles.emptyStateText}>
+              When your partner sends a voice message, it will appear here.
+            </Text>
+            <TouchableOpacity
+              style={[styles.choiceButton, styles.listenButton, { marginTop: 20, alignSelf: 'stretch' }]}
+              onPress={loadReceivedMessages}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="refresh" size={20} color="#fff" />
+              <Text style={styles.choiceButtonText}>Refresh</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.choiceButton, styles.waitButton, { alignSelf: 'stretch' }]}
+              onPress={handleGoBack}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="arrow-back" size={20} color="#fff" />
+              <Text style={styles.choiceButtonText}>Go back</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Loading — but still show play button if audio is ready */}
         {isAnalyzing && (
@@ -601,6 +636,25 @@ const styles = StyleSheet.create({
   receivedBadges: { flexDirection: 'row', gap: 6, marginTop: 4 },
   receivedBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   receivedBadgeText: { fontSize: 11, fontWeight: '600', textTransform: 'capitalize' },
+  // Empty state
+  emptyState: {
+    alignItems: 'center',
+    padding: 32,
+    marginTop: 16,
+    gap: 12,
+  },
+  emptyStateTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#fff',
+    marginTop: 8,
+  },
+  emptyStateText: {
+    fontSize: 14,
+    color: '#888',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
   // Analysis
   analysisSection: {
     alignItems: 'center',

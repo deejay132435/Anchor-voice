@@ -1,6 +1,7 @@
 import { ref, set, get, push, onValue } from 'firebase/database';
 import { database } from './firebaseConfig';
 import { updateDevicePairId, incrementPairCount, getPairCount } from './deviceService';
+import { getPublicKeyBase64 } from './cryptoService';
 
 const MAX_FREE_PAIRINGS = 1;
 
@@ -9,6 +10,8 @@ export interface PairInfo {
   deviceA: string;
   deviceB: string;
   createdAt: number;
+  publicKeyA?: string;
+  publicKeyB?: string;
 }
 
 // Characters that aren't ambiguous (no O/0/I/1/l)
@@ -48,12 +51,14 @@ export async function createPairingCode(deviceId: string): Promise<string> {
   }
 
   const now = Date.now();
+  const publicKey = await getPublicKeyBase64();
   const codeRef = ref(database, `pairing_codes/${code}`);
   await set(codeRef, {
     created_by: deviceId,
     created_at: now,
     expires_at: now + 60 * 60 * 1000, // 1 hour
     status: 'pending',
+    public_key: publicKey,
   });
 
   return code;
@@ -112,15 +117,18 @@ export async function redeemPairingCode(
     return { success: false, error: 'FREE_LIMIT_REACHED' };
   }
 
-  // Create the pair
+  // Create the pair (with E2E encryption public keys)
   const pairsRef = ref(database, 'pairs');
   const newPairRef = push(pairsRef);
   const pairId = newPairRef.key!;
 
+  const redeemerPublicKey = await getPublicKeyBase64();
   await set(newPairRef, {
     device_a: data.created_by,
     device_b: deviceId,
     created_at: Date.now(),
+    public_key_a: data.public_key || null,
+    public_key_b: redeemerPublicKey,
   });
 
   // Mark code as used
@@ -166,6 +174,8 @@ export async function getPairInfo(deviceId: string): Promise<PairInfo | null> {
     deviceA: pair.device_a,
     deviceB: pair.device_b,
     createdAt: pair.created_at,
+    publicKeyA: pair.public_key_a || undefined,
+    publicKeyB: pair.public_key_b || undefined,
   };
 }
 
@@ -174,6 +184,32 @@ export async function getPartnerDeviceId(deviceId: string): Promise<string | nul
   const pairInfo = await getPairInfo(deviceId);
   if (!pairInfo) return null;
   return pairInfo.deviceA === deviceId ? pairInfo.deviceB : pairInfo.deviceA;
+}
+
+/** Get the partner's E2E public key (base64). Returns null if not available (pre-encryption pair). */
+export async function getPartnerPublicKey(deviceId: string): Promise<string | null> {
+  const pairInfo = await getPairInfo(deviceId);
+  if (!pairInfo) return null;
+
+  if (pairInfo.deviceA === deviceId) {
+    return pairInfo.publicKeyB || null;
+  } else {
+    return pairInfo.publicKeyA || null;
+  }
+}
+
+/** Get this device's public key from the pair record (to let partner know our key for sender identification) */
+export async function getSenderPublicKey(senderDeviceId: string, pairId: string): Promise<string | null> {
+  const pairRef = ref(database, `pairs/${pairId}`);
+  const pairSnap = await get(pairRef);
+  if (!pairSnap.exists()) return null;
+
+  const pair = pairSnap.val();
+  if (pair.device_a === senderDeviceId) {
+    return pair.public_key_a || null;
+  } else {
+    return pair.public_key_b || null;
+  }
 }
 
 /** Unpair — removes the pair and clears both devices */
