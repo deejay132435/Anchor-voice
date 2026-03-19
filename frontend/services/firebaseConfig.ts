@@ -4,6 +4,7 @@ import {
   getStorage,
   ref as storageRef,
   uploadBytes,
+  uploadString,
   getDownloadURL,
   deleteObject,
 } from 'firebase/storage';
@@ -32,16 +33,22 @@ const storage = getStorage(app);
 
 /** Sign in anonymously — gives us a uid for security rules without requiring accounts */
 export async function ensureAuth(): Promise<string> {
+  if (auth.currentUser) {
+    return auth.currentUser.uid;
+  }
   try {
-    if (auth.currentUser) {
-      return auth.currentUser.uid;
-    }
     const credential = await signInAnonymously(auth);
     return credential.user.uid;
   } catch (err) {
-    console.log('[Firebase] Auth error (non-fatal):', err);
-    return 'anonymous';
+    console.log('[Firebase] Auth error, retrying once...', err);
+    // One retry — network hiccups on cold start are common
+    try {
+      const credential = await signInAnonymously(auth);
+      return credential.user.uid;
+    } catch (retryErr) {
+      throw new Error('Firebase authentication failed. Check your connection and try again.');
+    }
   }
 }
 
-export { app, auth, database, storage, storageRef, uploadBytes, getDownloadURL, deleteObject };
+export { app, auth, database, storage, storageRef, uploadBytes, uploadString, getDownloadURL, deleteObject };

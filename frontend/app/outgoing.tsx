@@ -268,7 +268,23 @@ export default function OutgoingScreen() {
 
   // ---- Send ----
   const sendToPartner = async () => {
-    if (!activeAudioUri || !pairId || !deviceId) return;
+    if (!activeAudioUri) {
+      Alert.alert('No Audio', 'Record or type a message first.');
+      return;
+    }
+    if (!pairId || !deviceId) {
+      Alert.alert('Not Paired', 'Connect with your partner first from the home screen.');
+      return;
+    }
+
+    // Verify the audio file still exists before trying to send
+    const fileInfo = await FileSystem.getInfoAsync(activeAudioUri);
+    if (!fileInfo.exists) {
+      Alert.alert('Error', 'Audio file not found. Please record again.');
+      resetAll();
+      return;
+    }
+
     setIsSendingToPartner(true);
     try {
       let duration = recordingDuration || 3;
@@ -292,8 +308,9 @@ export default function OutgoingScreen() {
         { text: 'OK', onPress: () => router.back() },
       ]);
     } catch (err: any) {
-      console.log('[Outgoing] Send error:', err?.message || err);
-      Alert.alert('Error', 'Failed to send message. Please try again.');
+      const msg = err?.message || 'Unknown error';
+      console.log('[Outgoing] Send error:', msg);
+      Alert.alert('Send Failed', msg);
     } finally {
       setIsSendingToPartner(false);
     }

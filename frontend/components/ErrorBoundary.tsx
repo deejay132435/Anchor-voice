@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 
 interface Props {
   children: React.ReactNode;
@@ -25,6 +25,10 @@ export class ErrorBoundary extends React.Component<Props, State> {
     console.error('[ErrorBoundary] Error info:', errorInfo);
   }
 
+  handleRetry = () => {
+    this.setState({ hasError: false, error: null });
+  };
+
   render() {
     if (this.state.hasError) {
       return (
@@ -36,9 +40,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
             <Text style={styles.errorDetail}>
               {this.state.error?.message || 'Unknown error'}
             </Text>
-            <Text style={styles.instruction}>
-              Please refresh the page
-            </Text>
+            <TouchableOpacity style={styles.retryButton} onPress={this.handleRetry}>
+              <Text style={styles.retryText}>Try Again</Text>
+            </TouchableOpacity>
           </View>
         </View>
       );
@@ -84,8 +88,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 24,
   },
-  instruction: {
-    fontSize: 14,
-    color: '#9b59b6',
+  retryButton: {
+    backgroundColor: '#9b59b6',
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  retryText: {
+    fontSize: 16,
+    color: '#fff',
+    fontWeight: '600',
   },
 });

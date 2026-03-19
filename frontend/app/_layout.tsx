@@ -13,7 +13,7 @@ export default function RootLayout() {
   const router = useRouter();
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntent();
 
-  const notificationResponseListener = useRef<Notifications.EventSubscription>();
+  const notificationResponseListener = useRef<Notifications.Subscription>(null);
 
   // Initialize Firebase auth + device identity + push notifications on app launch
   useEffect(() => {
@@ -42,7 +42,7 @@ export default function RootLayout() {
 
     return () => {
       if (notificationResponseListener.current) {
-        Notifications.removeNotificationSubscription(notificationResponseListener.current);
+        notificationResponseListener.current.remove();
       }
     };
   }, []);

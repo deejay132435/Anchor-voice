@@ -175,7 +175,10 @@ export default function IncomingScreen() {
       setHasAnalyzed(true);
     } catch (error) {
       console.error('Analysis error:', error);
-      Alert.alert('Analysis Error', 'Could not analyze audio. Check your connection.');
+      // Set fallback so user can still listen even if analysis fails
+      setInsights(['Analysis unavailable']);
+      setSuggestions(["Take a breath before responding."]);
+      setHasAnalyzed(false); // Shows "Message ready" fallback UI with play button
     } finally {
       setIsAnalyzing(false);
     }

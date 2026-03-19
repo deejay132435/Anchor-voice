@@ -4,6 +4,7 @@ import {
   storage,
   storageRef,
   uploadBytes,
+  uploadString,
   getDownloadURL,
   deleteObject,
   ensureAuth,
@@ -58,26 +59,31 @@ export async function sendVoiceMessage(
   let downloadUrl: string;
   let storageExtension: string;
 
+  // Read audio file as base64 (works reliably on React Native, unlike fetch/blob)
+  const base64Audio = await FileSystem.readAsStringAsync(audioUri, { encoding: 'base64' });
+  if (!base64Audio || base64Audio.length === 0) {
+    throw new Error('Audio file is empty or could not be read');
+  }
+
+  // Detect content type from file extension
+  const isMp3 = audioUri.toLowerCase().endsWith('.mp3');
+  const audioContentType = isMp3 ? 'audio/mpeg' : 'audio/mp4';
+
   if (isEncrypted) {
-    // Read audio as bytes, encrypt, then upload
-    const base64Audio = await FileSystem.readAsStringAsync(audioUri, { encoding: 'base64' });
+    // Encrypt audio bytes, then upload as Uint8Array (no blob needed)
     const plainBytes = decodeBase64(base64Audio);
     const encryptedBytes = await encryptAudio(plainBytes, partnerPublicKey);
-    const encryptedBase64 = encodeBase64(encryptedBytes);
 
-    // Convert base64 to blob for upload
-    const encBlob = await fetch(`data:application/octet-stream;base64,${encryptedBase64}`).then(r => r.blob());
     storageExtension = '.enc';
     const audioStorageRef = storageRef(storage, `pairs/${pairId}/${messageId}${storageExtension}`);
-    await uploadBytes(audioStorageRef, encBlob, { contentType: 'application/octet-stream' });
+    await uploadBytes(audioStorageRef, encryptedBytes, { contentType: 'application/octet-stream' });
     downloadUrl = await getDownloadURL(audioStorageRef);
   } else {
-    // Fallback: unencrypted upload for pre-encryption pairs
-    const response = await fetch(audioUri);
-    const blob = await response.blob();
-    storageExtension = '.m4a';
+    // Upload unencrypted audio using uploadString with base64 (reliable on RN)
+    const ext = isMp3 ? '.mp3' : '.m4a';
+    storageExtension = ext;
     const audioStorageRef = storageRef(storage, `pairs/${pairId}/${messageId}${storageExtension}`);
-    await uploadBytes(audioStorageRef, blob, { contentType: 'audio/mp4' });
+    await uploadString(audioStorageRef, base64Audio, 'base64', { contentType: audioContentType });
     downloadUrl = await getDownloadURL(audioStorageRef);
   }
 
@@ -95,9 +101,10 @@ export async function sendVoiceMessage(
     status: 'sent',
     listened_by_sender: true,
     listened_by_receiver: false,
-    is_tts: false,
+    is_tts: isMp3,
     deleted: false,
     encrypted: isEncrypted,
+    storage_extension: storageExtension,
   });
 
   // Send push notification to partner
@@ -271,19 +278,23 @@ async function checkAndAutoDelete(pairId: string, messageId: string): Promise<vo
   const data = snapshot.val();
 
   if (data.listened_by_sender && data.listened_by_receiver && !data.deleted) {
-    // Delete audio from Firebase Storage (try both encrypted and unencrypted paths)
-    const ext = data.encrypted ? '.enc' : '.m4a';
+    // Delete audio from Firebase Storage — try stored extension, then fallbacks
+    const storedExt = data.storage_extension;
+    const ext = storedExt || (data.encrypted ? '.enc' : '.m4a');
+    const fallbackExts = ['.enc', '.m4a', '.mp3'].filter(e => e !== ext);
     try {
       const audioRef = storageRef(storage, `pairs/${pairId}/${messageId}${ext}`);
       await deleteObject(audioRef);
     } catch {
-      // File may already be deleted — also try the other extension as fallback
-      try {
-        const fallbackExt = ext === '.enc' ? '.m4a' : '.enc';
-        const fallbackRef = storageRef(storage, `pairs/${pairId}/${messageId}${fallbackExt}`);
-        await deleteObject(fallbackRef);
-      } catch {
-        // File already deleted
+      // Try fallback extensions
+      for (const fallbackExt of fallbackExts) {
+        try {
+          const fallbackRef = storageRef(storage, `pairs/${pairId}/${messageId}${fallbackExt}`);
+          await deleteObject(fallbackRef);
+          break;
+        } catch {
+          // Continue trying
+        }
       }
     }
 
