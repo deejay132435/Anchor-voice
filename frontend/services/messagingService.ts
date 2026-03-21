@@ -3,10 +3,10 @@ import {
   database,
   storage,
   storageRef,
-  uploadString,
   getDownloadURL,
   deleteObject,
   ensureAuth,
+  uploadBase64ToStorage,
 } from './firebaseConfig';
 import * as FileSystem from 'expo-file-system/legacy';
 import { getPartnerDeviceId, getPartnerPublicKey, getSenderPublicKey } from './pairingService';
@@ -120,16 +120,14 @@ export async function sendVoiceMessage(
 
   if (isEncrypted) {
     try {
-      // Encrypt audio bytes, then convert back to base64 for upload
-      // (React Native doesn't support Blob from ArrayBuffer, so uploadString is the only option)
+      // Encrypt audio bytes, then convert back to base64 for REST upload
       const plainBytes = base64ToBytes(base64Audio);
       const encryptedBytes = await encryptAudio(plainBytes, partnerPublicKey!);
       const encryptedBase64 = bytesToBase64(encryptedBytes);
 
       storageExtension = '.enc';
-      const audioStorageRef = storageRef(storage, `pairs/${pairId}/${messageId}${storageExtension}`);
-      await uploadString(audioStorageRef, encryptedBase64, 'base64', { contentType: 'application/octet-stream' });
-      downloadUrl = await getDownloadURL(audioStorageRef);
+      const storagePath = `pairs/${pairId}/${messageId}${storageExtension}`;
+      downloadUrl = await uploadBase64ToStorage(storagePath, encryptedBase64, 'application/octet-stream');
       actuallyEncrypted = true;
     } catch (encErr) {
       console.log('[Messaging] Encryption/upload failed, falling back to unencrypted:', encErr);
@@ -138,13 +136,12 @@ export async function sendVoiceMessage(
   }
 
   if (!actuallyEncrypted) {
-    // Upload unencrypted using uploadString with base64
-    // (uploadBytes crashes on RN: "Creating blobs from ArrayBuffer not supported")
+    // Upload unencrypted via REST API
+    // (Firebase JS SDK uploadBytes/uploadString both crash on RN — Blob not supported)
     const ext = isMp3 ? '.mp3' : '.m4a';
     storageExtension = ext;
-    const audioStorageRef = storageRef(storage, `pairs/${pairId}/${messageId}${storageExtension}`);
-    await uploadString(audioStorageRef, base64Audio, 'base64', { contentType: audioContentType });
-    downloadUrl = await getDownloadURL(audioStorageRef);
+    const storagePath = `pairs/${pairId}/${messageId}${storageExtension}`;
+    downloadUrl = await uploadBase64ToStorage(storagePath, base64Audio, audioContentType);
   }
 
   // Write message metadata

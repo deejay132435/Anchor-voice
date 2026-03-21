@@ -3,8 +3,6 @@ import { getDatabase } from 'firebase/database';
 import {
   getStorage,
   ref as storageRef,
-  uploadBytes,
-  uploadString,
   getDownloadURL,
   deleteObject,
 } from 'firebase/storage';
@@ -51,4 +49,53 @@ export async function ensureAuth(): Promise<string> {
   }
 }
 
-export { app, auth, database, storage, storageRef, uploadBytes, uploadString, getDownloadURL, deleteObject };
+/**
+ * Upload a base64 string to Firebase Storage via REST API.
+ * The Firebase JS SDK's uploadBytes/uploadString both create Blobs internally,
+ * which crashes on React Native ("Creating blobs from ArrayBuffer not supported").
+ * This bypasses the SDK entirely and uses a direct REST upload.
+ */
+export async function uploadBase64ToStorage(
+  path: string,
+  base64Data: string,
+  contentType: string
+): Promise<string> {
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) {
+    throw new Error('Not authenticated — cannot upload');
+  }
+
+  const bucket = firebaseConfig.storageBucket;
+  const encodedPath = encodeURIComponent(path);
+  const url = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodedPath}?uploadType=media`;
+
+  // Write base64 to a temp file, then upload via expo-file-system (no Blob needed)
+  const FileSystem = require('expo-file-system/legacy');
+  const tmpPath = `${FileSystem.cacheDirectory}upload_${Date.now()}.tmp`;
+  await FileSystem.writeAsStringAsync(tmpPath, base64Data, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+
+  const uploadResult = await FileSystem.uploadAsync(url, tmpPath, {
+    httpMethod: 'POST',
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': contentType,
+    },
+  });
+
+  // Clean up temp file
+  await FileSystem.deleteAsync(tmpPath, { idempotent: true });
+
+  if (uploadResult.status < 200 || uploadResult.status >= 300) {
+    throw new Error(`Upload failed (${uploadResult.status}): ${uploadResult.body}`);
+  }
+
+  // Parse response to get the download token
+  const responseData = JSON.parse(uploadResult.body);
+  const downloadToken = responseData.downloadTokens;
+  return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodedPath}?alt=media&token=${downloadToken}`;
+}
+
+export { app, auth, database, storage, storageRef, getDownloadURL, deleteObject };
