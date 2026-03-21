@@ -3,7 +3,6 @@ import {
   database,
   storage,
   storageRef,
-  uploadBytes,
   uploadString,
   getDownloadURL,
   deleteObject,
@@ -13,7 +12,49 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { getPartnerDeviceId, getPartnerPublicKey, getSenderPublicKey } from './pairingService';
 import { getPartnerPushToken, sendPushNotification } from './notificationService';
 import { encryptAudio, decryptAudio } from './cryptoService';
-import { encodeBase64, decodeBase64 } from 'tweetnacl-util';
+
+// Base64 lookup table for chunk-safe decoding (no atob — crashes on large strings in Hermes)
+const B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+const B64_LOOKUP = new Uint8Array(128);
+for (let i = 0; i < B64_CHARS.length; i++) B64_LOOKUP[B64_CHARS.charCodeAt(i)] = i;
+
+function base64ToBytes(base64: string): Uint8Array {
+  // Strip padding
+  let len = base64.length;
+  while (len > 0 && base64[len - 1] === '=') len--;
+
+  const outLen = (len * 3) >>> 2;
+  const bytes = new Uint8Array(outLen);
+  let p = 0;
+
+  for (let i = 0; i < len; i += 4) {
+    const a = B64_LOOKUP[base64.charCodeAt(i)];
+    const b = i + 1 < len ? B64_LOOKUP[base64.charCodeAt(i + 1)] : 0;
+    const c = i + 2 < len ? B64_LOOKUP[base64.charCodeAt(i + 2)] : 0;
+    const d = i + 3 < len ? B64_LOOKUP[base64.charCodeAt(i + 3)] : 0;
+
+    bytes[p++] = (a << 2) | (b >> 4);
+    if (p < outLen) bytes[p++] = ((b & 0x0f) << 4) | (c >> 2);
+    if (p < outLen) bytes[p++] = ((c & 0x03) << 6) | d;
+  }
+  return bytes;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  const len = bytes.length;
+  let result = '';
+  for (let i = 0; i < len; i += 3) {
+    const a = bytes[i];
+    const b = i + 1 < len ? bytes[i + 1] : 0;
+    const c = i + 2 < len ? bytes[i + 2] : 0;
+
+    result += B64_CHARS[a >> 2];
+    result += B64_CHARS[((a & 0x03) << 4) | (b >> 4)];
+    result += i + 1 < len ? B64_CHARS[((b & 0x0f) << 2) | (c >> 6)] : '=';
+    result += i + 2 < len ? B64_CHARS[c & 0x3f] : '=';
+  }
+  return result;
+}
 
 export interface AnalysisSummary {
   severity_level: string;
@@ -53,11 +94,17 @@ export async function sendVoiceMessage(
   const messageId = newMsgRef.key!;
 
   // Check if E2E encryption is available (partner has a public key)
-  const partnerPublicKey = await getPartnerPublicKey(senderDeviceId);
+  // Wrapped in try-catch so encryption issues never block sending
+  let partnerPublicKey: string | null = null;
+  try {
+    partnerPublicKey = await getPartnerPublicKey(senderDeviceId);
+  } catch (err) {
+    console.log('[Messaging] Could not get partner public key, sending unencrypted:', err);
+  }
   const isEncrypted = !!partnerPublicKey;
 
-  let downloadUrl: string;
-  let storageExtension: string;
+  let downloadUrl: string = '';
+  let storageExtension: string = '';
 
   // Read audio file as base64 (works reliably on React Native, unlike fetch/blob)
   const base64Audio = await FileSystem.readAsStringAsync(audioUri, { encoding: 'base64' });
@@ -69,17 +116,30 @@ export async function sendVoiceMessage(
   const isMp3 = audioUri.toLowerCase().endsWith('.mp3');
   const audioContentType = isMp3 ? 'audio/mpeg' : 'audio/mp4';
 
-  if (isEncrypted) {
-    // Encrypt audio bytes, then upload as Uint8Array (no blob needed)
-    const plainBytes = decodeBase64(base64Audio);
-    const encryptedBytes = await encryptAudio(plainBytes, partnerPublicKey);
+  let actuallyEncrypted = false;
 
-    storageExtension = '.enc';
-    const audioStorageRef = storageRef(storage, `pairs/${pairId}/${messageId}${storageExtension}`);
-    await uploadBytes(audioStorageRef, encryptedBytes, { contentType: 'application/octet-stream' });
-    downloadUrl = await getDownloadURL(audioStorageRef);
-  } else {
-    // Upload unencrypted audio using uploadString with base64 (reliable on RN)
+  if (isEncrypted) {
+    try {
+      // Encrypt audio bytes, then convert back to base64 for upload
+      // (React Native doesn't support Blob from ArrayBuffer, so uploadString is the only option)
+      const plainBytes = base64ToBytes(base64Audio);
+      const encryptedBytes = await encryptAudio(plainBytes, partnerPublicKey!);
+      const encryptedBase64 = bytesToBase64(encryptedBytes);
+
+      storageExtension = '.enc';
+      const audioStorageRef = storageRef(storage, `pairs/${pairId}/${messageId}${storageExtension}`);
+      await uploadString(audioStorageRef, encryptedBase64, 'base64', { contentType: 'application/octet-stream' });
+      downloadUrl = await getDownloadURL(audioStorageRef);
+      actuallyEncrypted = true;
+    } catch (encErr) {
+      console.log('[Messaging] Encryption/upload failed, falling back to unencrypted:', encErr);
+      // Fall through to unencrypted upload
+    }
+  }
+
+  if (!actuallyEncrypted) {
+    // Upload unencrypted using uploadString with base64
+    // (uploadBytes crashes on RN: "Creating blobs from ArrayBuffer not supported")
     const ext = isMp3 ? '.mp3' : '.m4a';
     storageExtension = ext;
     const audioStorageRef = storageRef(storage, `pairs/${pairId}/${messageId}${storageExtension}`);
@@ -103,7 +163,7 @@ export async function sendVoiceMessage(
     listened_by_receiver: false,
     is_tts: isMp3,
     deleted: false,
-    encrypted: isEncrypted,
+    encrypted: actuallyEncrypted,
     storage_extension: storageExtension,
   });
 
@@ -201,7 +261,7 @@ export async function downloadVoiceMessage(
 
     // Read encrypted bytes
     const encBase64 = await FileSystem.readAsStringAsync(encPath, { encoding: 'base64' });
-    const encBytes = decodeBase64(encBase64);
+    const encBytes = base64ToBytes(encBase64);
 
     // Get sender's public key from the pair record
     const senderPublicKey = await getSenderPublicKey(senderDeviceId, pairId);
@@ -211,7 +271,7 @@ export async function downloadVoiceMessage(
 
     // Decrypt
     const decryptedBytes = await decryptAudio(encBytes, senderPublicKey);
-    const decryptedBase64 = encodeBase64(decryptedBytes);
+    const decryptedBase64 = bytesToBase64(decryptedBytes);
 
     // Write decrypted audio
     await FileSystem.writeAsStringAsync(localPath, decryptedBase64, { encoding: 'base64' });
