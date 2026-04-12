@@ -91,7 +91,8 @@ const fetchWithTimeout = async (
 export const analyzeAudio = async (
   audioBase64: string,
   durationSeconds: number,
-  messageType?: 'outgoing' | 'incoming'
+  messageType?: 'outgoing' | 'incoming',
+  language?: string
 ): Promise<AudioAnalysisResponse> => {
   // Validate input
   if (!audioBase64 || audioBase64.length === 0) {
@@ -108,6 +109,9 @@ export const analyzeAudio = async (
   // Include message_type to get suggestions in the same response (saves a round trip)
   if (messageType) {
     body.message_type = messageType;
+  }
+  if (language) {
+    body.language = language;
   }
 
   const response = await fetchWithTimeout(`${API_URL}/api/analyze-audio`, {
@@ -129,13 +133,14 @@ export interface GrammarFixResponse {
   original: string;
   corrected: string;
   changed: boolean;
+  language?: string;
 }
 
-export const fixGrammar = async (text: string): Promise<GrammarFixResponse> => {
+export const fixGrammar = async (text: string, language?: string): Promise<GrammarFixResponse> => {
   const response = await fetchWithTimeout(`${API_URL}/api/fix-grammar`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, language: language || 'auto' }),
   });
 
   if (!response.ok) {
@@ -145,11 +150,11 @@ export const fixGrammar = async (text: string): Promise<GrammarFixResponse> => {
   return response.json();
 };
 
-export const generateTts = async (text: string, voice: string = 'nova'): Promise<string> => {
+export const generateTts = async (text: string, voice: string = 'nova', language?: string): Promise<string> => {
   const response = await fetchWithTimeout(`${API_URL}/api/tts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: text.trim(), voice, format: 'base64' }),
+    body: JSON.stringify({ text: text.trim(), voice, format: 'base64', language }),
   });
 
   if (!response.ok) {

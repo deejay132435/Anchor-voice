@@ -3,7 +3,8 @@ import { database } from './firebaseConfig';
 import { updateDevicePairId, incrementPairCount, getPairCount } from './deviceService';
 import { getPublicKeyBase64 } from './cryptoService';
 
-const MAX_FREE_PAIRINGS = 1;
+// TODO: Re-enable subscription limit for final build (was 1)
+const MAX_FREE_PAIRINGS = 999;
 
 export interface PairInfo {
   pairId: string;

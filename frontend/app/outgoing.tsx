@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import * as ScreenCapture from 'expo-screen-capture';
 import { analyzeAudio, AudioAnalysisResponse, fixGrammar, generateTts } from '../services/apiService';
 import { getOrCreateDeviceId } from '../services/deviceService';
 import { getPairInfo } from '../services/pairingService';
@@ -58,10 +59,19 @@ export default function OutgoingScreen() {
   const [deviceId, setDeviceId] = useState<string>('');
   const [isSendingToPartner, setIsSendingToPartner] = useState(false);
 
+  // Language
+  const [language, setLanguage] = useState('en');
+
   // Incoming context
   const [incomingInsights, setIncomingInsights] = useState<string[]>([]);
   const [incomingPhrasing, setIncomingPhrasing] = useState<string>('');
   const [showIncomingContext, setShowIncomingContext] = useState(true);
+
+  // Prevent screenshots and screen recording while composing messages
+  useEffect(() => {
+    ScreenCapture.preventScreenCaptureAsync();
+    return () => { ScreenCapture.allowScreenCaptureAsync(); };
+  }, []);
 
   useEffect(() => {
     const init = async () => {
@@ -162,12 +172,12 @@ export default function OutgoingScreen() {
     if (!ttsText.trim()) return;
     setIsFixingGrammar(true);
     try {
-      const result = await fixGrammar(ttsText.trim());
+      const result = await fixGrammar(ttsText.trim(), language);
       if (result.changed) {
         setCorrectedText(result.corrected);
       } else {
         setCorrectedText(null);
-        Alert.alert('Looks good', 'No grammar corrections needed.');
+        Alert.alert('Looks good', 'No spelling or grammar corrections needed.');
       }
     } catch (err) {
       console.error('Grammar fix error:', err);
@@ -188,7 +198,7 @@ export default function OutgoingScreen() {
     if (!ttsText.trim()) return;
     setIsGeneratingTts(true);
     try {
-      const ttsPath = await generateTts(ttsText.trim());
+      const ttsPath = await generateTts(ttsText.trim(), 'nova', language);
       setTtsAudioUri(ttsPath);
 
       // Analyze the generated audio
@@ -218,7 +228,7 @@ export default function OutgoingScreen() {
         await tempSound.unloadAsync();
       } catch {}
 
-      const analysis = await analyzeAudio(base64Audio, actualDuration, 'outgoing');
+      const analysis = await analyzeAudio(base64Audio, actualDuration, 'outgoing', language);
       setAnalysisResults(analysis);
       setSuggestions(analysis.suggestions || []);
       setHasAnalyzed(true);
@@ -438,6 +448,39 @@ export default function OutgoingScreen() {
         {mode === 'tts' && !ttsAudioUri && (
           <View style={styles.ttsSection}>
             <Text style={styles.ttsLabel}>Type your message</Text>
+
+            {/* Language Picker */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.langScroll} contentContainerStyle={styles.langScrollContent}>
+              {[
+                { code: 'en', label: 'English' },
+                { code: 'es', label: 'Español' },
+                { code: 'fr', label: 'Français' },
+                { code: 'de', label: 'Deutsch' },
+                { code: 'pt', label: 'Português' },
+                { code: 'it', label: 'Italiano' },
+                { code: 'nl', label: 'Nederlands' },
+                { code: 'ru', label: 'Русский' },
+                { code: 'zh', label: '中文' },
+                { code: 'ja', label: '日本語' },
+                { code: 'ko', label: '한국어' },
+                { code: 'ar', label: 'العربية' },
+                { code: 'hi', label: 'हिन्दी' },
+                { code: 'tl', label: 'Tagalog' },
+                { code: 'tr', label: 'Türkçe' },
+                { code: 'vi', label: 'Tiếng Việt' },
+              ].map((lang) => (
+                <TouchableOpacity
+                  key={lang.code}
+                  style={[styles.langChip, language === lang.code && styles.langChipActive]}
+                  onPress={() => setLanguage(lang.code)}
+                >
+                  <Text style={[styles.langChipText, language === lang.code && styles.langChipTextActive]}>
+                    {lang.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
             <TextInput
               style={styles.ttsInput}
               value={ttsText}
@@ -482,7 +525,7 @@ export default function OutgoingScreen() {
                 ) : (
                   <>
                     <Ionicons name="sparkles" size={18} color="#f1c40f" />
-                    <Text style={styles.grammarButtonText}>Fix Grammar</Text>
+                    <Text style={styles.grammarButtonText}>Fix Spelling</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -796,6 +839,33 @@ const styles = StyleSheet.create({
   ttsLabel: {
     fontSize: 16,
     fontWeight: '600',
+    color: '#fff',
+  },
+  langScroll: {
+    maxHeight: 36,
+  },
+  langScrollContent: {
+    gap: 8,
+    paddingRight: 16,
+  },
+  langChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#1a1a2e',
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  langChipActive: {
+    backgroundColor: '#9b59b6',
+    borderColor: '#9b59b6',
+  },
+  langChipText: {
+    fontSize: 13,
+    color: '#a0a0b0',
+    fontWeight: '500',
+  },
+  langChipTextActive: {
     color: '#fff',
   },
   ttsInput: {

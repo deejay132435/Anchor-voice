@@ -181,10 +181,11 @@ def detect_escalation_words(text: str) -> Dict[str, List[str]]:
     return detected
 
 
-async def transcribe_audio(audio_data: bytes) -> Optional[str]:
+async def transcribe_audio(audio_data: bytes, language: Optional[str] = None) -> Optional[str]:
     """
     Transcribe audio using OpenAI Whisper API.
     Returns transcription text or None if unavailable.
+    Language: ISO 639-1 code (e.g. "en", "es") or None for auto-detect.
     """
     if not OPENAI_AVAILABLE:
         return None
@@ -205,13 +206,18 @@ async def transcribe_audio(audio_data: bytes) -> Optional[str]:
             temp_path = f.name
 
         try:
+            # Build transcription kwargs — omit language to let Whisper auto-detect
+            transcribe_kwargs: Dict[str, Any] = {
+                "model": "whisper-1",
+                "file": open(temp_path, "rb"),
+                "response_format": "text",
+            }
+            if language and language != "auto":
+                transcribe_kwargs["language"] = language
+
             with open(temp_path, "rb") as audio_file:
-                response = client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    response_format="text",
-                    language="en",  # Skip language detection = faster
-                )
+                transcribe_kwargs["file"] = audio_file
+                response = client.audio.transcriptions.create(**transcribe_kwargs)
             return response.strip() if response else None
         finally:
             # Clean up temp file
@@ -232,6 +238,7 @@ class AnalyzeAudioRequest(BaseModel):
     audio_base64: str
     duration_seconds: float
     message_type: Optional[str] = None  # "outgoing" or "incoming" — if set, includes suggestions in response
+    language: Optional[str] = None  # ISO 639-1 code (e.g. "en", "es", "fr") or None for auto-detect
 
 
 class AnalysisResults(BaseModel):
@@ -535,7 +542,7 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
     # librosa is CPU-bound, Whisper is network I/O — no reason to wait for one before the other
     loop = asyncio.get_event_loop()
     features_task = loop.run_in_executor(None, analyze_audio_features, audio_data)
-    transcription_task = transcribe_audio(audio_data)
+    transcription_task = transcribe_audio(audio_data, req.language)
     features, transcription = await asyncio.gather(features_task, transcription_task)
     print(f"[analyze-audio] Audio features: {features}")
     print(f"[analyze-audio] Transcription: {transcription}")
@@ -793,6 +800,7 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
             emotion=emotion_result.get("primary_emotion", "calm"),
             has_positive=has_positive,
             has_apology=has_apology,
+            language=req.language,
         )
         result["suggestions"] = suggestions
 
@@ -802,6 +810,7 @@ async def analyze_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
 async def _generate_suggestions_internal(
     raised_voice: bool, fast_pacing: bool, emotional_charge: bool, message_type: str,
     emotion: str = "calm", has_positive: bool = False, has_apology: bool = False,
+    language: Optional[str] = None,
 ) -> List[str]:
     """
     Internal: generate 3 suggestions using Claude AI.
@@ -821,9 +830,24 @@ async def _generate_suggestions_internal(
     is_heated = any([raised_voice, fast_pacing, emotional_charge])
     is_positive = has_positive or emotion in ["apologetic", "supportive", "excited", "affectionate", "grateful", "calm"]
 
+    # Language instruction for Claude prompts
+    lang_names = {
+        "en": "English", "es": "Spanish", "fr": "French", "de": "German",
+        "pt": "Portuguese", "it": "Italian", "nl": "Dutch", "ru": "Russian",
+        "zh": "Chinese", "ja": "Japanese", "ko": "Korean", "ar": "Arabic",
+        "hi": "Hindi", "tr": "Turkish", "pl": "Polish", "sv": "Swedish",
+        "tl": "Tagalog", "vi": "Vietnamese", "th": "Thai", "uk": "Ukrainian",
+    }
+    is_non_english = language and language != "en" and language != "auto"
+    lang_suffix = ""
+    if is_non_english:
+        lang_name = lang_names.get(language, language)
+        lang_suffix = f"\n\nIMPORTANT: Respond in {lang_name}. All 3 phrases must be in {lang_name}."
+
     # SPEED OPTIMIZATION: For calm/positive messages, return instant suggestions
     # instead of calling Claude API (saves 3-5 seconds)
-    if is_positive and not is_heated:
+    # Skip instant suggestions for non-English — let Claude generate them in the right language
+    if is_positive and not is_heated and not is_non_english:
         if has_apology:
             if message_type == "outgoing":
                 return [
@@ -927,6 +951,9 @@ Generate exactly 3 short, calm, neutral response phrases they could use.
 Each phrase should be 1-2 sentences max. Focus on staying calm and not escalating.
 Return only the 3 phrases, one per line, no numbering or bullets."""
 
+            # Append language instruction if non-English
+            prompt += lang_suffix
+
             client = anthropic.Anthropic(api_key=api_key)
             response = client.messages.create(
                 model="claude-sonnet-4-20250514",
@@ -1009,13 +1036,14 @@ async def debug_audio(req: AnalyzeAudioRequest) -> Dict[str, Any]:
 
 class FixGrammarRequest(BaseModel):
     text: str
+    language: Optional[str] = None  # e.g. "en", "es", "fr", "auto" — auto-detect if not provided
 
 
 @api.post("/fix-grammar")
 async def fix_grammar(req: FixGrammarRequest) -> Dict[str, Any]:
     """
-    Fix grammar and spelling in text while preserving the speaker's voice and intent.
-    Uses Claude to correct grammar without changing tone or meaning.
+    Fix grammar, spelling, and word choice in text while preserving the speaker's voice and intent.
+    Uses Claude to correct errors without changing tone or meaning. Supports multiple languages.
     """
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
@@ -1026,14 +1054,36 @@ async def fix_grammar(req: FixGrammarRequest) -> Dict[str, Any]:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not CLAUDE_AVAILABLE or not api_key:
         # Fallback: return original text if Claude unavailable
-        return {"original": req.text, "corrected": req.text, "changed": False}
+        return {"original": req.text, "corrected": req.text, "changed": False, "language": req.language or "unknown"}
+
+    lang_instruction = ""
+    if req.language and req.language != "auto":
+        lang_names = {
+            "en": "English", "es": "Spanish", "fr": "French", "de": "German",
+            "pt": "Portuguese", "it": "Italian", "nl": "Dutch", "ru": "Russian",
+            "zh": "Chinese", "ja": "Japanese", "ko": "Korean", "ar": "Arabic",
+            "hi": "Hindi", "tr": "Turkish", "pl": "Polish", "sv": "Swedish",
+            "tl": "Tagalog", "vi": "Vietnamese", "th": "Thai", "uk": "Ukrainian",
+        }
+        lang_name = lang_names.get(req.language, req.language)
+        lang_instruction = f"The text is in {lang_name}. Correct it in {lang_name}."
+    else:
+        lang_instruction = "Auto-detect the language and correct in that same language."
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=600,
-            messages=[{"role": "user", "content": f"""Fix the grammar and spelling in this text. Keep the same tone, meaning, and personality. Only fix errors - do not rewrite or rephrase. If the text is already correct, return it unchanged.
+            messages=[{"role": "user", "content": f"""Fix the grammar, spelling, and word choice in this text. {lang_instruction}
+
+Rules:
+- Fix misspelled words — replace with real, correctly spelled words
+- Fix grammar errors (subject-verb agreement, tense, articles, etc.)
+- Replace made-up or non-existent words with the closest real word the speaker likely meant
+- Keep the same tone, meaning, personality, and intent
+- Do NOT rewrite, rephrase, or add words beyond what's needed to fix errors
+- If the text is already correct, return it unchanged
 
 Return ONLY the corrected text, nothing else.
 
@@ -1049,16 +1099,18 @@ Text: {req.text.strip()}"""}]
             "original": req.text.strip(),
             "corrected": corrected,
             "changed": corrected.lower() != req.text.strip().lower(),
+            "language": req.language or "auto",
         }
     except Exception as e:
         print(f"Grammar fix error: {e}")
-        return {"original": req.text, "corrected": req.text, "changed": False}
+        return {"original": req.text, "corrected": req.text, "changed": False, "language": req.language or "unknown"}
 
 
 class TtsRequest(BaseModel):
     text: str
     voice: Optional[str] = "nova"  # OpenAI TTS voices: alloy, echo, fable, onyx, nova, shimmer
     format: Optional[str] = "base64"  # "base64" (JSON) or "binary" (raw audio)
+    language: Optional[str] = None  # Language code — OpenAI TTS auto-detects from text
 
 
 @api.post("/tts")

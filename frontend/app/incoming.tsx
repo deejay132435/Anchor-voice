@@ -13,8 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
-// Screen capture protection can be enabled for production:
-// import * as ScreenCapture from 'expo-screen-capture';
+import * as ScreenCapture from 'expo-screen-capture';
 import { analyzeAudio, AudioAnalysisResponse } from '../services/apiService';
 import { downloadVoiceMessage, markAsListened, getRecentMessages, deleteCachedMessage, Message } from '../services/messagingService';
 import { getOrCreateDeviceId } from '../services/deviceService';
@@ -49,11 +48,11 @@ export default function IncomingScreen() {
   const [currentPairId, setCurrentPairId] = useState<string | null>(null);
   const [hasListened, setHasListened] = useState(false);
 
-  // TODO: Enable for production — prevents screenshots/screen recording
-  // useEffect(() => {
-  //   ScreenCapture.preventScreenCaptureAsync();
-  //   return () => { ScreenCapture.allowScreenCaptureAsync(); };
-  // }, []);
+  // Prevent screenshots and screen recording while viewing messages
+  useEffect(() => {
+    ScreenCapture.preventScreenCaptureAsync();
+    return () => { ScreenCapture.allowScreenCaptureAsync(); };
+  }, []);
 
   useEffect(() => {
     if (isInAppMessage) {
