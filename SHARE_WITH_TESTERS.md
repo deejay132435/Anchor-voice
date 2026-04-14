@@ -1,92 +1,154 @@
-# 🎤 Anchor Voice - Test Drive
+# 📲 Anchor Voice - Share with Testers
 
-## Quick Start (2 minutes)
+**Ready to test the latest build?** Scan any QR code below!
 
-### Step 1: Install Expo Go
-Download the **Expo Go** app:
-- 📱 **Android**: [Google Play Store](https://play.google.com/store/apps/details?id=host.exp.exponent)
-- 🍎 **iOS**: [Apple App Store](https://apps.apple.com/app/expo-go/id982107779)
+---
 
-### Step 2: Scan QR Code
-Scan this QR code with your phone camera:
+## 🚀 Three Ways to Get the App
 
-![QR Code](qr-code-expo.png)
+### Method 1: Direct APK Download (Fastest)
+**One-click install on Android**
 
-**OR** use this direct link:
+![APK Download QR](qr-download_apk.png)
+
+**Steps:**
+1. Scan QR code with Android phone
+2. Tap "Install" when page loads
+3. If blocked, enable unknown sources in Settings > Security
+4. Launch app and grant microphone permission
+
+**Download Link:**
 ```
-exp://exp.host/@deejayjustin/anchor-voice
+https://expo.dev/accounts/deejayjustin/projects/anchor-voice/builds
 ```
 
-### Step 3: Test the App
+---
 
-#### 🎙️ **Outgoing Message (Your Voice)**
-1. Tap the microphone icon
-2. Record yourself speaking (natural pace, emotion)
-3. See instant analysis: tone, pace, emotion
-4. Get 3 AI-powered de-escalation suggestions
-5. Share your recording via WhatsApp, email, etc.
+### Method 2: Expo Go (Test Live Updates)
+**Install updates without re-downloading**
 
-#### 📥 **Incoming Message (Received Audio)**
-1. Tap the incoming icon
-2. Select an audio file from your phone
-3. Get a calming message
-4. See 3 suggested response options
-5. Use suggestions to craft a calm response
+![Expo Go QR](qr-expo_dev.png)
 
-#### 🔄 **Test Flow**
-- Record something angry/raised → See suggestions
-- Record something calm → See different analysis
-- Share with a friend → They test too
+**Steps:**
+1. Download **Expo Go** from app store
+2. Scan QR code in Expo Go
+3. App launches automatically
+4. Live reload enabled during development
+
+**Manual:** Enter `exp://exp.host/@deejayjustin/anchor-voice`
 
 ---
 
-## 📋 What to Test
+### Method 3: GitHub Repository (Developers)
+**Build locally or contribute**
 
-- [ ] App loads when you scan QR code
-- [ ] Can record audio successfully
-- [ ] Analysis shows (raised voice, pacing, emotion)
-- [ ] Suggestions appear
-- [ ] Can select and play audio files
-- [ ] Share button works
-- [ ] App doesn't crash
+![GitHub QR](qr-github_repo.png)
 
-## 🐛 Report Issues
+**Steps:**
+1. Clone repository
+2. Follow setup in README
+3. Run locally on emulator or device
+4. Make changes and test
 
-If something breaks, tell us:
-- What you were doing
-- What happened (error message, crash, etc.)
-- Device & OS (iPhone 14, Android 13, etc.)
-
----
-
-## 💡 How to Fix Issues
-
-We can fix bugs **instantly** without rebuilding:
-1. We make code changes
-2. Your app auto-reloads
-3. Test the fix
-4. Done! ✨
-
-No need to download anything new!
+**Link:**
+```
+https://github.com/deejay132435/Anchor-voice
+```
 
 ---
 
-## ❓ Help
+## ✅ What to Test
 
-**App won't load?**
-- Check internet connection
-- Make sure backend is running (check with us)
-- Close Expo Go and try again
+### Quick Test (5 minutes)
+- [ ] App launches
+- [ ] Microphone permission works
+- [ ] Can record a message
+- [ ] Tone analysis displays
 
-**Can't record audio?**
-- Grant microphone permissions
-- Check device audio settings
+### Full Test (20 minutes)
+- [ ] Complete pairing flow
+- [ ] Record & send message
+- [ ] Listen & respond
+- [ ] Tone analysis accuracy
+- [ ] AI suggestions helpful
 
-**Suggestions not appearing?**
-- Backend might be down (we'll fix it)
-- Try a longer recording (3+ seconds)
+### Deep Test (45 minutes)
+- [ ] All features from "Full Test"
+- [ ] Multiple message exchanges
+- [ ] Edge cases (bad audio, slow network)
+- [ ] UI responsiveness
+- [ ] Privacy checks (auto-delete)
 
 ---
 
-**Thanks for testing! 🙌**
-Your feedback helps us make Anchor better!
+## 🎯 Key Features to Try
+
+✨ **Voice Recording** - Record messages with tone analysis  
+💬 **Partner Pairing** - Connect with another tester via 6-digit code  
+🧠 **AI Analysis** - Get de-escalation suggestions  
+🔒 **Privacy** - Messages auto-delete, no transcripts stored  
+🌍 **Multi-language** - 16 languages supported  
+
+---
+
+## 🐛 Report Bugs
+
+Found something broken? Help us improve!
+
+**Quick Report:**
+```
+Device: [Brand/Model]
+OS: [Android/iOS version]
+Issue: [What went wrong]
+Screenshot: [If possible]
+```
+
+**Formal Issue:**
+→ Go to GitHub and create an issue
+
+---
+
+## 📋 Build Information
+
+**Version:** 1.0.0  
+**Build Date:** April 14, 2026  
+**Status:** ✅ Ready for Testing  
+
+**Latest Fixes:**
+- ✅ Fixed all linting errors
+- ✅ TypeScript compiles cleanly
+- ✅ Optimized performance
+- ✅ Security improvements
+
+---
+
+## Questions?
+
+1. **How do I pair with someone?**
+   - Tap "Connect with Partner"
+   - Create or enter a pairing code
+   - Share code with partner
+
+2. **Does it store my messages?**
+   - No! Messages are end-to-end encrypted
+   - Auto-delete after both parties listen
+   - No transcripts are saved
+
+3. **Works offline?**
+   - Currently requires internet
+   - Offline support coming soon
+
+4. **Can I use with family/friends?**
+   - Yes! Pair with anyone
+   - Perfect for de-escalating conflicts
+
+---
+
+## 🙏 Thank You!
+
+Thank you for helping test Anchor Voice!  
+Your feedback makes the app better.
+
+**Want to contribute?** Star the repo and share with others!
+
+📌 Save these QR codes in your phone for easy sharing.

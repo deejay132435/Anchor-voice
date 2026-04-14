@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anchor Voice - Tester Download Hub</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 800px;
+            width: 100%;
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px 20px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.95;
+        }
+        
+        .content {
+            padding: 40px 20px;
+        }
+        
+        .download-section {
+            margin-bottom: 30px;
+        }
+        
+        .download-option {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+        }
+        
+        .download-option:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+        }
+        
+        .option-title {
+            display: flex;
+            align-items: center;
+            font-size: 1.3em;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .option-icon {
+            font-size: 1.5em;
+            margin-right: 10px;
+        }
+        
+        .option-description {
+            color: #666;
+            font-size: 0.95em;
+            margin-bottom: 15px;
+            line-height: 1.5;
+        }
+        
+        .qr-code {
+            text-align: center;
+            margin: 15px 0;
+        }
+        
+        .qr-code img {
+            width: 200px;
+            height: 200px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            background: white;
+        }
+        
+        .btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: transform 0.2s ease;
+            border: none;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .features {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 30px;
+        }
+        
+        .features h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .features ul {
+            list-style: none;
+            columns: 2;
+            gap: 20px;
+        }
+        
+        .features li {
+            padding: 8px 0;
+            color: #666;
+        }
+        
+        .features li:before {
+            content: "✨ ";
+            color: #667eea;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+        
+        .footer {
+            background: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+            border-top: 1px solid #e9ecef;
+        }
+        
+        .status {
+            background: #d4edda;
+            color: #155724;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: 600;
+        }
+        
+        .steps {
+            background: white;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        
+        .steps ol {
+            margin-left: 20px;
+            color: #666;
+            line-height: 1.8;
+        }
+        
+        @media (max-width: 600px) {
+            .header h1 {
+                font-size: 1.8em;
+            }
+            
+            .features ul {
+                columns: 1;
+            }
+            
+            .qr-code img {
+                width: 150px;
+                height: 150px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎤 Anchor Voice</h1>
+            <p>Voice-first de-escalation support for heated conversations</p>
+        </div>
+        
+        <div class="content">
+            <div class="status">
+                ✅ Build v1.0.0 - Ready for Testing
+            </div>
+            
+            <div class="download-section">
+                <h2 style="margin-bottom: 20px; color: #333;">Choose Your Download Method</h2>
+                
+                <!-- Method 1: Direct APK -->
+                <div class="download-option">
+                    <div class="option-title">
+                        <span class="option-icon">📱</span>
+                        Direct APK (Fastest)
+                    </div>
+                    <p class="option-description">
+                        Install directly on Android. One-click setup, no extra apps needed.
+                    </p>
+                    <div class="qr-code">
+                        <img src="qr-download_apk.png" alt="APK Download QR Code">
+                    </div>
+                    <p style="text-align: center; color: #666; margin-bottom: 10px;">
+                        or
+                    </p>
+                    <div style="text-align: center;">
+                        <a href="https://expo.dev/accounts/deejayjustin/projects/anchor-voice/builds" class="btn">Download APK</a>
+                    </div>
+                </div>
+                
+                <!-- Method 2: Expo Go -->
+                <div class="download-option">
+                    <div class="option-title">
+                        <span class="option-icon">🔗</span>
+                        Expo Go (Live Updates)
+                    </div>
+                    <p class="option-description">
+                        Get instant updates while we develop. Perfect for testing new features.
+                    </p>
+                    <div class="qr-code">
+                        <img src="qr-expo_dev.png" alt="Expo Dev QR Code">
+                    </div>
+                    <div class="steps">
+                        <ol>
+                            <li>Download <strong>Expo Go</strong> from app store</li>
+                            <li>Scan QR code above or enter: <code>exp://exp.host/@deejayjustin/anchor-voice</code></li>
+                            <li>App launches automatically</li>
+                        </ol>
+                    </div>
+                </div>
+                
+                <!-- Method 3: Source Code -->
+                <div class="download-option">
+                    <div class="option-title">
+                        <span class="option-icon">👨‍💻</span>
+                        GitHub (Build Locally)
+                    </div>
+                    <p class="option-description">
+                        For developers. Build from source and contribute!
+                    </p>
+                    <div class="qr-code">
+                        <img src="qr-github_repo.png" alt="GitHub Repo QR Code">
+                    </div>
+                    <div style="text-align: center;">
+                        <a href="https://github.com/deejay132435/Anchor-voice" class="btn">View Repository</a>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Features -->
+            <div class="features">
+                <h3>🎯 Key Features to Test</h3>
+                <ul>
+                    <li>Voice recording with tone analysis</li>
+                    <li>Partner pairing via 6-digit code</li>
+                    <li>Real-time de-escalation suggestions</li>
+                    <li>End-to-end encrypted messaging</li>
+                    <li>Auto-delete after both listen</li>
+                    <li>Screenshot/recording protection</li>
+                    <li>Multi-language support (16 languages)</li>
+                    <li>Privacy-first (no data storage)</li>
+                </ul>
+            </div>
+            
+            <!-- Quick Test -->
+            <div style="background: #e7f3ff; border-left: 4px solid #2196F3; padding: 15px; border-radius: 4px; margin-top: 20px;">
+                <h3 style="color: #1565c0; margin-bottom: 10px;">⚡ Quick 5-Minute Test</h3>
+                <ol style="margin-left: 20px; color: #333; line-height: 1.8;">
+                    <li>Install the app</li>
+                    <li>Grant microphone permission</li>
+                    <li>Record a test message</li>
+                    <li>Check tone analysis</li>
+                    <li>Try recording another message</li>
+                </ol>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>📧 Questions? Report issues on <a href="https://github.com/deejay132435/Anchor-voice/issues" style="color: #667eea; text-decoration: none;">GitHub</a></p>
+            <p style="margin-top: 10px;">🙏 Thank you for testing Anchor Voice!</p>
+        </div>
+    </div>
+</body>
+</html>
