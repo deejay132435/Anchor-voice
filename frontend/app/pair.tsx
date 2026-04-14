@@ -332,7 +332,7 @@ export default function PairScreen() {
 
               <View style={styles.termFooter}>
                 <Text style={styles.termFooterText}>
-                  By tapping "I Agree" you confirm that you have read, understood, and agree to these terms. You also confirm that you have legal capacity to consent and that your use of Anchor complies with applicable laws in your jurisdiction.
+                  By tapping &quot;I Agree&quot; you confirm that you have read, understood, and agree to these terms. You also confirm that you have legal capacity to consent and that your use of Anchor complies with applicable laws in your jurisdiction.
                 </Text>
               </View>
             </ScrollView>

@@ -1,7 +1,6 @@
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useEffect, useRef } from 'react';
-import { useRouter } from 'expo-router';
 import { useShareIntent } from 'expo-share-intent';
 import Constants from 'expo-constants';
 import { ensureAuth } from '../services/firebaseConfig';
@@ -45,7 +44,7 @@ export default function RootLayout() {
         notificationResponseListener.current.remove();
       }
     };
-  }, []);
+  }, [router]);
 
   // Pre-warm the backend
   useEffect(() => {
@@ -66,7 +65,7 @@ export default function RootLayout() {
         resetShareIntent();
       }
     }
-  }, [hasShareIntent, shareIntent]);
+  }, [hasShareIntent, shareIntent, router, resetShareIntent]);
 
   return (
     <ErrorBoundary>

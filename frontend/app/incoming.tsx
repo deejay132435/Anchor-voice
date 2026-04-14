@@ -70,6 +70,8 @@ export default function IncomingScreen() {
     return () => {
       if (sound) sound.unloadAsync();
     };
+    // Dependencies needed but defined below: loadInAppMessage, analyzeIncomingAudio, loadReceivedMessages, isInAppMessage, sound
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.sharedUri, inAppMessageId]);
 
   const loadReceivedMessages = async () => {

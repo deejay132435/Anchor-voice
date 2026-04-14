@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(eas build:list --limit 3 --platform android --non-interactive)",
+      "Bash(grep -rn export.*uploadString node_modules/firebase/ --include=*.d.ts)",
+      "Bash(grep -rn uploadString node_modules/firebase/ --include=*.d.ts)"
+    ]
+  }
+}

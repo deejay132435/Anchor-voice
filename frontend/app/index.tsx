@@ -13,7 +13,7 @@ import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Circle, Line, Path, Defs, LinearGradient, Stop, G } from 'react-native-svg';
+import Svg, { Circle, Line, Path, G } from 'react-native-svg';
 import { getOrCreateDeviceId } from '../services/deviceService';
 import { getPairInfo, unpair } from '../services/pairingService';
 import { ref, onValue } from 'firebase/database';
@@ -63,7 +63,6 @@ function AnchorLogo({ size = 300, opacity = 0.12 }: { size?: number; opacity?: n
 export default function HomeScreen() {
   const router = useRouter();
   const [isPaired, setIsPaired] = useState(false);
-  const [pairId, setPairId] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
 
   useFocusEffect(
@@ -75,7 +74,6 @@ export default function HomeScreen() {
           const deviceId = await getOrCreateDeviceId();
           const pair = await getPairInfo(deviceId);
           setIsPaired(!!pair);
-          setPairId(pair?.pairId || null);
 
           if (pair?.pairId) {
             const messagesRef = ref(database, `messages/${pair.pairId}`);
@@ -125,9 +123,8 @@ export default function HomeScreen() {
               const deviceId = await getOrCreateDeviceId();
               await unpair(deviceId);
               setIsPaired(false);
-              setPairId(null);
               setUnreadCount(0);
-            } catch (err) {
+            } catch {
               Alert.alert('Error', 'Failed to disconnect. Try again.');
             }
           },

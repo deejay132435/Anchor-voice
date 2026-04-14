@@ -95,7 +95,7 @@ export default function OutgoingScreen() {
       if (recording) recording.stopAndUnloadAsync();
       if (sound) sound.unloadAsync();
     };
-  }, []);
+  }, [recording, sound]);
 
   useEffect(() => {
     if (params.incomingInsights && params.incomingPhrasing) {
