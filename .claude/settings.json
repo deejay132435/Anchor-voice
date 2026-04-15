@@ -3,7 +3,10 @@
     "allow": [
       "Bash(eas build:list --limit 3 --platform android --non-interactive)",
       "Bash(grep -rn export.*uploadString node_modules/firebase/ --include=*.d.ts)",
-      "Bash(grep -rn uploadString node_modules/firebase/ --include=*.d.ts)"
+      "Bash(grep -rn uploadString node_modules/firebase/ --include=*.d.ts)",
+      "Bash(rm -rf web-build)",
+      "Bash(rm -f vercel.json WEB_DEPLOYMENT.md qr-web-placeholder.png TESTING_PACKAGE.md BUILD_AND_TEST.md README_TESTING.md SHARE_WITH_TESTERS.md MONETIZATION_MODEL.md FIXES_APPLIED.md QR_CODE_INFO.md download.html qr-code-download.png Untitled.ipynb)",
+      "Bash(ls *.md *.html)"
     ]
   }
 }
