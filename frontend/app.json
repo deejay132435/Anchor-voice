@@ -1,7 +1,8 @@
 {
   "expo": {
     "updates": {
-      "enabled": false
+      "enabled": false,
+      "url": "https://u.expo.dev/d6e86a9a-ab9f-41af-8030-c5c5a2e9d751"
     },
     "name": "Anchor Voice",
     "slug": "anchor-voice",
@@ -33,42 +34,6 @@
         "RECORD_AUDIO"
       ],
       "googleServicesFile": "./google-services.json",
-      "intentFilters": [
-        {
-          "action": "android.intent.action.SEND",
-          "category": [
-            "android.intent.category.DEFAULT"
-          ],
-          "data": [
-            {
-              "mimeType": "audio/*"
-            }
-          ]
-        },
-        {
-          "action": "android.intent.action.SEND_MULTIPLE",
-          "category": [
-            "android.intent.category.DEFAULT"
-          ],
-          "data": [
-            {
-              "mimeType": "audio/*"
-            }
-          ]
-        },
-        {
-          "action": "android.intent.action.VIEW",
-          "category": [
-            "android.intent.category.DEFAULT",
-            "android.intent.category.BROWSABLE"
-          ],
-          "data": [
-            {
-              "mimeType": "audio/*"
-            }
-          ]
-        }
-      ],
       "package": "com.anchor.voice"
     },
     "web": {
@@ -126,6 +91,9 @@
         "projectId": "d6e86a9a-ab9f-41af-8030-c5c5a2e9d751"
       }
     },
-    "owner": "deejayjustin"
+    "owner": "deejayjustin",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
   }
 }

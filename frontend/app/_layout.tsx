@@ -1,8 +1,20 @@
 import { Stack, useRouter } from 'expo-router';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useEffect, useRef } from 'react';
-import { useShareIntent } from 'expo-share-intent';
 import Constants from 'expo-constants';
+
+// Safe wrapper: expo-share-intent requires a native module that isn't present in Expo Go.
+// In Expo Go, appOwnership === 'expo', so we no-op the hook to prevent crashes.
+const isExpoGo = Constants.appOwnership === 'expo';
+const useShareIntent: () => {
+  hasShareIntent: boolean;
+  shareIntent: { files?: { path?: string }[] } | null;
+  resetShareIntent: () => void;
+} = isExpoGo
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  ? () => ({ hasShareIntent: false, shareIntent: null, resetShareIntent: () => {} })
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  : require('expo-share-intent').useShareIntent;
 import { ensureAuth } from '../services/firebaseConfig';
 import { getOrCreateDeviceId, registerDevice } from '../services/deviceService';
 import { registerForPushNotifications, savePushToken } from '../services/notificationService';
