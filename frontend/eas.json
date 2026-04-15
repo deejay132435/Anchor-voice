@@ -21,7 +21,17 @@
         "buildType": "apk"
       },
       "ios": {
-        "distribution": "internal"
+        "distribution": "internal",
+        "autoIncrement": "buildNumber"
+      }
+    },
+    "testflight": {
+      "distribution": "store",
+      "ios": {
+        "autoIncrement": "buildNumber"
+      },
+      "android": {
+        "buildType": "app-bundle"
       }
     },
     "production": {
@@ -29,11 +39,18 @@
         "buildType": "app-bundle"
       },
       "ios": {
-        "autoIncrement": true
+        "autoIncrement": "buildNumber"
       }
     }
   },
   "submit": {
+    "testflight": {
+      "ios": {
+        "appleId": "YOUR_APPLE_ID_EMAIL",
+        "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID",
+        "appleTeamId": "YOUR_APPLE_TEAM_ID"
+      }
+    },
     "production": {}
   }
 }

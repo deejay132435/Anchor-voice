@@ -8,15 +8,19 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "anchorvoice",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.anchor.voice",
+      "buildNumber": "1",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Record voice messages for conflict management",
-        "NSCameraUsageDescription": "Access media to share recordings"
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
