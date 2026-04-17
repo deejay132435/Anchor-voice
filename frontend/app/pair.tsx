@@ -58,7 +58,7 @@ export default function PairScreen() {
   // Consent modal
   const [showConsent, setShowConsent] = useState(false);
   const [consentAction, setConsentAction] = useState<'create' | 'redeem' | null>(null);
-  const [hasScrolledToEnd, setHasScrolledToEnd] = useState(false);
+  const [hasAgreed, setHasAgreed] = useState(false);
 
   // Create code state
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
@@ -81,7 +81,7 @@ export default function PairScreen() {
 
   const requestConsent = (action: 'create' | 'redeem') => {
     setConsentAction(action);
-    setHasScrolledToEnd(false);
+    setHasAgreed(false);
     setShowConsent(true);
   };
 
@@ -314,28 +314,27 @@ export default function PairScreen() {
               By connecting with a partner, you agree to the following:
             </Text>
 
-            <ScrollView
-              style={styles.modalScroll}
-              onScroll={({ nativeEvent }) => {
-                const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
-                const isEnd = layoutMeasurement.height + contentOffset.y >= contentSize.height - 20;
-                if (isEnd) setHasScrolledToEnd(true);
-              }}
-              scrollEventThrottle={100}
-            >
+            <ScrollView style={styles.modalScroll}>
               {CONSENT_TERMS.map((term, i) => (
                 <View key={i} style={styles.termSection}>
                   <Text style={styles.termTitle}>{`${i + 1}. ${term.title}`}</Text>
                   <Text style={styles.termBody}>{term.body}</Text>
                 </View>
               ))}
-
-              <View style={styles.termFooter}>
-                <Text style={styles.termFooterText}>
-                  By tapping &quot;I Agree&quot; you confirm that you have read, understood, and agree to these terms. You also confirm that you have legal capacity to consent and that your use of Anchor complies with applicable laws in your jurisdiction.
-                </Text>
-              </View>
             </ScrollView>
+
+            <TouchableOpacity
+              style={styles.checkboxRow}
+              onPress={() => setHasAgreed(!hasAgreed)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.checkbox, hasAgreed && styles.checkboxChecked]}>
+                {hasAgreed && <Ionicons name="checkmark" size={14} color="#fff" />}
+              </View>
+              <Text style={styles.checkboxLabel}>
+                I have read and agree to these terms
+              </Text>
+            </TouchableOpacity>
 
             <View style={styles.modalActions}>
               <TouchableOpacity
@@ -345,13 +344,11 @@ export default function PairScreen() {
                 <Text style={styles.declineButtonText}>Decline</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.agreeButton, !hasScrolledToEnd && styles.agreeButtonDisabled]}
+                style={[styles.agreeButton, !hasAgreed && styles.agreeButtonDisabled]}
                 onPress={handleConsentAccept}
-                disabled={!hasScrolledToEnd}
+                disabled={!hasAgreed}
               >
-                <Text style={styles.agreeButtonText}>
-                  {hasScrolledToEnd ? 'I Agree' : 'Read to continue'}
-                </Text>
+                <Text style={styles.agreeButtonText}>I Agree</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -579,7 +576,8 @@ const styles = StyleSheet.create({
   },
   modalScroll: {
     paddingHorizontal: 20,
-    maxHeight: 400,
+    flexGrow: 0,
+    flexShrink: 1,
   },
   termSection: {
     marginBottom: 16,
@@ -595,18 +593,31 @@ const styles = StyleSheet.create({
     color: '#c0c0c0',
     lineHeight: 19,
   },
-  termFooter: {
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: '#333',
-    paddingTop: 12,
-    marginTop: 4,
-    marginBottom: 12,
+    borderTopColor: '#2a2a3e',
   },
-  termFooterText: {
-    fontSize: 12,
-    color: '#888',
-    lineHeight: 17,
-    fontStyle: 'italic',
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#9b59b6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: '#9b59b6',
+  },
+  checkboxLabel: {
+    flex: 1,
+    fontSize: 13,
+    color: '#d0d0d0',
   },
   modalActions: {
     flexDirection: 'row',

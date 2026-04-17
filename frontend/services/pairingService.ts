@@ -1,5 +1,5 @@
 import { ref, set, get, push, onValue } from 'firebase/database';
-import { database } from './firebaseConfig';
+import { database, ensureAuth } from './firebaseConfig';
 import { updateDevicePairId, incrementPairCount, getPairCount } from './deviceService';
 import { getPublicKeyBase64 } from './cryptoService';
 
@@ -28,6 +28,9 @@ function generateCode(): string {
 
 /** Create a 6-character pairing code that expires in 1 hour */
 export async function createPairingCode(deviceId: string): Promise<string> {
+  // Ensure Firebase auth before writing (security rules require auth)
+  await ensureAuth();
+
   // Check if device is already paired
   const existingPair = await getPairInfo(deviceId);
   if (existingPair) {
@@ -85,6 +88,9 @@ export async function redeemPairingCode(
   code: string,
   deviceId: string
 ): Promise<{ success: boolean; pairId?: string; error?: string }> {
+  // Ensure Firebase auth before writing (security rules require auth)
+  await ensureAuth();
+
   const codeRef = ref(database, `pairing_codes/${code.toUpperCase()}`);
   const snapshot = await get(codeRef);
 
